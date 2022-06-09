@@ -1,6 +1,5 @@
 data/*
 !data/README.md
 FCBF_module.py
-MTH_IDS_paper.pdf
-Tree-based_IDS.pdf
+*.pdf
 __pycache__
