@@ -1,0 +1,5 @@
+.ipynb_checkpoints
+*.png
+*.pdf
+train
+train_224
