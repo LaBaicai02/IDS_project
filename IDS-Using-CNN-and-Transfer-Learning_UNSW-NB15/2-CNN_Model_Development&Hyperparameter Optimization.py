@@ -1212,7 +1212,7 @@ if __name__ == '__main__':
     import requests
     resp = requests.get(
         "https://www.autodl.com/api/v1/wechat/message/push?token={token}&title={title}&name={name}&content={content}".format(
-            token="add7ba8eea4b",
+            token="",
             title="Running Completed",
             name="2-CNN_Model_Development&Hyperparameter Optimization.py",
             content="Time Used: {}".format(time.time()-starting_time))
