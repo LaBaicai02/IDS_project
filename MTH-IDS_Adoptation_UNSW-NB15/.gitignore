@@ -3,3 +3,6 @@ data/*
 FCBF_module.py
 *.pdf
 __pycache__
+img/*
+*.xlsx
+output/*

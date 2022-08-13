@@ -92,7 +92,7 @@ label=validation_generator.class_indices
 label={v: k for k, v in label.items()}
 
 # Prediction function
-def get_prediction(model, test_images=test_images, label=label, batch_size=BATCHSIZE):
+def get_prediction(model, test_images=test_images, label=label, batch_size=BATCHSIZE, verbose='auto'):
     predict=[]
     length=len(test_images)
     for i in range(((length-1)//batch_size)+1):
@@ -101,7 +101,7 @@ def get_prediction(model, test_images=test_images, label=label, batch_size=BATCH
         for path in inputimg:
             thisimg=np.array(Image.open(path))/255
             test_batch.append(thisimg)
-        model_batch=model.predict(np.array(test_batch)) #use master model to process the input image
+        model_batch=model.predict(np.array(test_batch), verbose=verbose) #use master model to process the input image
         predict_batch=list(np.argmax(model_batch,axis=1))
         predict_batch=[label[con] for con in predict_batch]
         predict.extend(predict_batch)
@@ -142,7 +142,7 @@ class LossHistory(keras.callbacks.Callback):
         if self.extra_data:
             # Get prediciton
             temp = self.model.stop_training
-            y_pred = get_prediction(model=self.model, test_images=self.test_images, label=self.label)
+            y_pred = get_prediction(model=self.model, test_images=self.test_images, label=self.label, verbose=1)
             self.model.stop_training = temp
             # Calculate extra data
             precision,recall,fscore,_= precision_recall_fscore_support(self.test_labels, y_pred, average='weighted', zero_division=0)
