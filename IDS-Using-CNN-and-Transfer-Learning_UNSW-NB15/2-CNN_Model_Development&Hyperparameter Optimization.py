@@ -21,7 +21,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
 from PIL import Image
-from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score,precision_recall_fscore_support
+from sklearn.metrics import classification_report,confusion_matrix,accuracy_score,precision_score,recall_score,f1_score,precision_recall_fscore_support
 from tensorflow.keras.applications.inception_resnet_v2 import InceptionResNetV2
 from tensorflow.keras.applications.inception_v3 import InceptionV3
 from tensorflow.keras.applications.mobilenet import MobileNet
@@ -46,6 +46,7 @@ import statistics
 import tensorflow.keras as keras
 import tensorflow.keras.callbacks as kcallbacks
 import time
+import seaborn as sns
 
 # ### Define the image plotting functions
 
@@ -91,6 +92,13 @@ for subdir, dirs, files in os.walk(test_rootdir):
 label=validation_generator.class_indices
 label={v: k for k, v in label.items()}
 
+# Prepare the output dir
+output_dir = 'output/CNN_based/2-output-{}'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))
+img_dir = os.path.join(output_dir, 'img')
+os.makedirs(img_dir)
+# Prepare the log file
+log_file = open(os.path.join(output_dir, 'classification_report-{}'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))), 'w+')
+
 # Prediction function
 def get_prediction(model, test_images=test_images, label=label, batch_size=BATCHSIZE, verbose='auto'):
     predict=[]
@@ -111,7 +119,7 @@ def get_prediction(model, test_images=test_images, label=label, batch_size=BATCH
 #when extra_data enabled please put this callback before early_stopping in case of any problem
 class LossHistory(keras.callbacks.Callback):
     def __init__(self, need_extra_data:bool=True, test_images=test_images, test_labels=test_labels, label=label):
-        # Enable the recording of precision, recall, f1-score (only epoch-wise)
+        # Enable the recording of precision, recall, f1-score, prediction time (only epoch-wise)
         self.extra_data = need_extra_data
         if need_extra_data:
             self.test_images = test_images
@@ -128,6 +136,9 @@ class LossHistory(keras.callbacks.Callback):
             self.precision = []
             self.recall = []
             self.f1_score = []
+            self.predict_time = []
+            # Record prediction -> for generating report
+            self.prediction = []
     def on_batch_end(self, batch, logs={}):
         self.losses['batch'].append(logs.get('loss'))
         self.accuracy['batch'].append(logs.get('acc'))
@@ -142,7 +153,9 @@ class LossHistory(keras.callbacks.Callback):
         if self.extra_data:
             # Get prediciton
             temp = self.model.stop_training
-            y_pred = get_prediction(model=self.model, test_images=self.test_images, label=self.label, verbose=1)
+            start_time = time.time()
+            y_pred = get_prediction(model=self.model, test_images=self.test_images, label=self.label, verbose='auto')
+            end_time = time.time()
             self.model.stop_training = temp
             # Calculate extra data
             precision,recall,fscore,_= precision_recall_fscore_support(self.test_labels, y_pred, average='weighted', zero_division=0)
@@ -150,6 +163,9 @@ class LossHistory(keras.callbacks.Callback):
             self.precision.append(precision)
             self.recall.append(recall)
             self.f1_score.append(fscore)
+            self.predict_time.append((end_time-start_time)/len(y_pred))
+            # Save prediction
+            self.prediction.append(y_pred)
     def loss_plot(self, loss_type):
         iters = range(len(self.losses[loss_type]))
         plt.figure()
@@ -185,10 +201,35 @@ class LossHistory(keras.callbacks.Callback):
             temp['precision']=self.precision[max_index]
             temp['recall']=self.recall[max_index]
             temp['f1-score']=self.f1_score[max_index]
+            temp['predict_time_per_image']=self.predict_time[max_index]
         return temp
+    def get_prediction(self, epoch='best'):
+        if not self.extra_data:
+            raise Exception('Prediction record unavailable')
+        # Get prediction
+        if epoch=='best': epoch=self.accuracy['epoch'].index(max(self.accuracy['epoch']))
+        elif epoch=='worst': epoch=self.accuracy['epoch'].index(min(self.accuracy['epoch']))
+        else: epoch-=1
+        return self.prediction[epoch]
 
 history_this= LossHistory(need_extra_data=True)
 history_hpo = LossHistory(need_extra_data=False)
+
+def generate_report(name:str, y_pred, y_true=test_labels, label=label, img_dir=img_dir, log_file=log_file, figsize=(18,14), log_classification_report:bool=True, save_img:bool=True, print_classifiaction_report:bool=True, display_confusion_matrix:bool=False):
+    # Generate classification report
+    report_str = classification_report(y_true,y_pred,zero_division=0)
+    if log_classification_report and log_file.writable(): log_file.write('******{}******\n'.format(name)+report_str+'\n')
+    if print_classifiaction_report: print(report_str)
+    # Generate confusion matrix
+    cm=confusion_matrix(y_true,y_pred)
+    f,ax=plt.subplots(figsize=figsize)
+    sns.heatmap(cm,annot=True,linewidth=0.5,linecolor="red",fmt=".0f",ax=ax)
+    ax.set_xticklabels(label.values())
+    ax.set_yticklabels(label.values())
+    plt.xlabel("y_pred")
+    plt.ylabel("y_true")
+    if save_img: plt.savefig(os.path.join(img_dir, '{}.pdf'.format(name)))
+    if display_confusion_matrix: plt.show()
 
 # ### Define the processing time measurement functions
 
@@ -215,7 +256,7 @@ timer = TimeMeasurement()
 # ### Define the output sheet
 
 class output_sheet:
-    def __init__(self, columns:list=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time']):
+    def __init__(self, columns:list=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image']):
         self.output_df = pd.DataFrame(columns=columns)
         # self.output_index = list()
     def add(self, item:str, **values:dict):
@@ -226,7 +267,7 @@ class output_sheet:
     # def apply_index(self):
     #     self.output_df.index = self.output_index
     def to_excel(self, path=None):
-        if path is None: path='2-result-{}.xlsx'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))
+        if path is None: path=os.path.join(output_dir, '2-result-{}.xlsx'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S')))
         # self.apply_index()
         self.output_df.to_excel(path)
 
@@ -265,7 +306,7 @@ def cnn_by_own(train_generator=train_generator,validation_generator=validation_g
     if return_model: 
         return model
     else: 
-        return (history.get_best(), timer.get_processing_time())
+        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
 
 # ### Model 2: Xception
 
@@ -306,7 +347,7 @@ def xception(train_generator=train_generator,validation_generator=validation_gen
     if return_model: 
         return model
     else: 
-        return (history.get_best(), timer.get_processing_time())
+        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
 
 # ### Model 3: VGG16
 
@@ -348,7 +389,7 @@ def vgg16(train_generator=train_generator,validation_generator=validation_genera
     if return_model: 
         return model
     else: 
-        return (history.get_best(), timer.get_processing_time())
+        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
 
 # ### Model 4: VGG19
 
@@ -390,7 +431,7 @@ def vgg19(train_generator=train_generator,validation_generator=validation_genera
     if return_model: 
         return model
     else: 
-        return (history.get_best(), timer.get_processing_time())
+        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
 
 # ### Model 5: ResNet
 
@@ -431,7 +472,7 @@ def resnet(train_generator=train_generator,validation_generator=validation_gener
     if return_model: 
         return model
     else: 
-        return (history.get_best(), timer.get_processing_time())
+        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
 
 # ### Model 6: Inception
 
@@ -472,7 +513,7 @@ def inception(train_generator=train_generator,validation_generator=validation_ge
     if return_model: 
         return model
     else: 
-        return (history.get_best(), timer.get_processing_time())
+        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
 
 # ### Model 7: InceptionResnet
 
@@ -513,7 +554,7 @@ def inceptionresnet(train_generator=train_generator,validation_generator=validat
     if return_model: 
         return model
     else: 
-        return (history.get_best(), timer.get_processing_time())
+        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
 
 # # Hyperparameter Optimization 
 # 
@@ -698,80 +739,87 @@ if __name__ == '__main__':
     starting_time = time.time()
 
     # Prepare output_sheet
-    output = output_sheet(columns=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time'])
+    output = output_sheet(columns=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image'])
 
     # # Construct CNN models
 
     # ### Model 1: a CNN model by own (baseline)
 
-    best_result, processing_time = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # cnn_by_own(input_shape=INPUT_SIZE,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # history_this.loss_plot('epoch')
     # history_this.loss_plot('batch')
     # plt.show()
 
     output.add('model_own', train_time=processing_time, **best_result)
+    generate_report('model_own_original', y_pred=y_pred)
 
     # ### Model 2: Xception
 
     #default only 50, tf36cnn 99
-    best_result, processing_time = run_with_multiprocessing(func=xception,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=xception,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # xception(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # history_this.loss_plot('epoch')
     # history_this.loss_plot('batch')
     # plt.show()
 
     output.add('Xception', train_time=processing_time, **best_result)
+    generate_report('Xception_original', y_pred=y_pred)
 
     # ### Model 3: VGG16
 
-    best_result, processing_time = run_with_multiprocessing(func=vgg16,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # vgg16(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#tf36cnn
     # history_this.loss_plot('epoch')
     # history_this.loss_plot('batch')
     # plt.show()
 
     output.add('VGG16', train_time=processing_time, **best_result)
+    generate_report('VGG16_original', y_pred=y_pred)
 
     # ### Model 4: VGG19
 
-    best_result, processing_time = run_with_multiprocessing(func=vgg19,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # vgg19(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#binary classificaiton
     # history_this.loss_plot('epoch')
     # history_this.loss_plot('batch')
     # plt.show()
 
     output.add('VGG19', train_time=processing_time, **best_result)
+    generate_report('VGG19_original', y_pred=y_pred)
 
     # ### Model 5: ResNet
 
-    best_result, processing_time = run_with_multiprocessing(func=resnet,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # resnet(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#binary classificaiton
     # history_this.loss_plot('epoch')
     # history_this.loss_plot('batch')
     # plt.show()
 
     output.add('Resnet', train_time=processing_time, **best_result)
+    generate_report('ResNet_original', y_pred=y_pred)
 
     # ### Model 6: Inception
 
-    best_result, processing_time = run_with_multiprocessing(func=inception,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=inception,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # inception(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#binary classificaiton
     # history_this.loss_plot('epoch')
     # history_this.loss_plot('batch')
     # plt.show()
 
     output.add('Inception', train_time=processing_time, **best_result)
+    generate_report('Inception_original', y_pred=y_pred)
 
     # ### Model 7: InceptionResnet
 
-    best_result, processing_time = run_with_multiprocessing(func=inceptionresnet,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
     # inceptionresnet(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	# 5-class classificaiton
     # history_this.loss_plot('epoch')
     # history_this.loss_plot('batch')
     # plt.show()
 
     output.add('InceptionResnet', train_time=processing_time, **best_result)
+    generate_report('InceptionResnet_original', y_pred=y_pred)
 
     # # Hyperparameter Optimization 
 
@@ -802,10 +850,11 @@ if __name__ == '__main__':
             'patience': int(best['patience']),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # cnn_by_own(input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('model_own (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('model_own_BO-TPE', y_pred=y_pred)
 
     # ### Random Search
 
@@ -825,10 +874,11 @@ if __name__ == '__main__':
             'patience': int(best['patience']),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # cnn_by_own(input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('model_own (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('model_own_Random_Search', y_pred=y_pred)
 
     # ## Xception
 
@@ -862,10 +912,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # xception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('Xception (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('Xception_BO-TPE', y_pred=y_pred)
 
     #Hyperparameter optimization by Random search
     t1=time.time()
@@ -886,10 +937,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # xception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('Xception (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('Xception_Random_Search', y_pred=y_pred)
 
     # ## VGG16
 
@@ -922,10 +974,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # vgg16(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('VGG16 (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('VGG16_BO-TPE', y_pred=y_pred)
 
     # ### Random Search
 
@@ -948,10 +1001,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # vgg16(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('VGG16 (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('VGG16_Random_Search', y_pred=y_pred)
 
     # ## VGG19
 
@@ -982,10 +1036,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # vgg19(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('VGG19 (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('VGG19_BO-TPE', y_pred=y_pred)
 
     # ### Random Search
 
@@ -1009,10 +1064,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # vgg19(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('VGG19 (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('VGG19_Random_Search', y_pred=y_pred)
 
     # ## ResNet
 
@@ -1045,10 +1101,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # resnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('ResNet (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('ResNet_BO-TPE', y_pred=y_pred)
 
     # ### Random Search
 
@@ -1072,10 +1129,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # resnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('ResNet (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('ResNet_Random_Search', y_pred=y_pred)
 
     # ## Inception
 
@@ -1108,10 +1166,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # inception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('Inception (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('Inception_BO-TPE', y_pred=y_pred)
 
     # ### Random Search
 
@@ -1135,10 +1194,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # inception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('Inception (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('Inception_Random_Search', y_pred=y_pred)
 
     # ## InceptionResnet
 
@@ -1171,10 +1231,11 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # inceptionresnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('InceptionResnet (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('InceptionResnet_BO-TPE', y_pred=y_pred)
 
     # ### Random Search
 
@@ -1198,14 +1259,16 @@ if __name__ == '__main__':
             'lr': abs(float(best['lr'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
-    best_result, processing_time = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
+    best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
     # inceptionresnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
 
     output.add('InceptionResnet (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
+    generate_report('InceptionResnet_Random_Search', y_pred=y_pred)
 
     # # Save Result
 
     output.to_excel()
+    log_file.close()
 
     # Online GPU renting platform specification
     # WeChat Message
