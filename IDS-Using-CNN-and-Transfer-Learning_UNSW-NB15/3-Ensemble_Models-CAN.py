@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # A Transfer Learning and Optimized CNN Based Intrusion Detection System for Internet of Vehicles 
 # This is the code for the paper entitled "**A Transfer Learning and Optimized CNN Based Intrusion Detection System for Internet of Vehicles**" accepted in IEEE International Conference on Communications (IEEE ICC).  
 # Authors: Li Yang (lyang339@uwo.ca) and Abdallah Shami (Abdallah.Shami@uwo.ca)  
@@ -12,11 +10,10 @@
 # * Probability averaging: calculate the average probability of the single model prediction results (the last layer of CNN models), and select the largest probability class to be the final class  
 # * Concatenation: extract the features in the last several layers of single models, and concatenate together to generate the new layers, and add a dense layer to do prediction
 
+# %% [markdown]
 # ## Import libraries
 
-# In[1]:
-
-
+# %%
 from collections import defaultdict
 from PIL import Image
 from tensorflow.keras import Input
@@ -35,15 +32,16 @@ import pandas as pd
 import tensorflow.keras as keras
 import tensorflow.keras.callbacks as kcallbacks
 import time
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report,confusion_matrix,accuracy_score,precision_score,recall_score,f1_score,precision_recall_fscore_support
 import warnings
 warnings.filterwarnings("ignore")
 
-
+# %% [markdown]
 # ## Read the test set
 
-# In[2]:
-
-
+# %%
 #generate images from train set and validation set
 TARGET_SIZE=(224,224)
 INPUT_SIZE=(224,224,3)
@@ -60,24 +58,15 @@ validation_generator = test_datagen.flow_from_directory(
 
 num_class = validation_generator.num_classes
 
-
-# In[3]:
-
-
+# %%
 #generate labels indicating disease (1) or normal (0)
 label=validation_generator.class_indices
 label={v: k for k, v in label.items()}
 
-
-# In[4]:
-
-
+# %%
 print(label)
 
-
-# In[5]:
-
-
+# %%
 #read images from validation folder
 rootdir = './test_224/'
 test_labels = []
@@ -91,61 +80,53 @@ for subdir, dirs, files in os.walk(rootdir):
         
 print(test_labels[0],test_images[0])
 
+# %%
+len_test = len(test_labels)
 
+# %% [markdown]
 # ## Load 6 trained CNN models
 
-# In[7]:
-
-
-#load model 1: xception
+# %%
+ #load model 1: xception
 xception_model=load_model('./xception.h5')
 
-
-# In[9]:
-
-
-#load model 2: VGG16
+# %%
+ #load model 2: VGG16
 vgg_model=load_model('./VGG16.h5')
 
-
-# In[10]:
-
-
-#load model 3: VGG19
+# %%
+ #load model 3: VGG19
 vgg19_model=load_model('./VGG19.h5')
 
-
-# In[11]:
-
-
-#load model 4: inception
+# %%
+ #load model 4: inception
 incep_model=load_model('./inception.h5')
 
-
-# In[12]:
-
-
-#load model 5: inceptionresnet
+# %%
+ #load model 5: inceptionresnet
 inres_model=load_model('./inceptionresnet.h5')
 
-
-# In[ ]:
-
-
-#load model 6: resnet
+# %%
+ #load model 6: resnet
 res_model=load_model('./resnet.h5')
 
-
+# %% [markdown]
 # ## Use the original CNN base models to make predictions
 
-# In[ ]:
+# %%
+# Prepare the output dir
+output_dir = 'output/CNN_based/3-output-{}'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))
+img_dir = os.path.join(output_dir, 'img')
+os.makedirs(img_dir)
+# Prepare the log file
+log_file = open(os.path.join(output_dir, 'classification_report-{}'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))), 'w+')
 
-
+# %%
 class output_sheet:
-    def __init__(self, columns:list=['accuracy', 'precision', 'recall', 'f1-score', 'training_time', 'testing_time']):
+    def __init__(self, columns:list=['accuracy', 'precision', 'recall', 'f1-score', 'training_time', 'predict_time_per_image']):
         self.output_df = pd.DataFrame(columns=columns)
         # self.output_index = list()
-    def add(self, item:str, **values):
+    def add(self, item:str, **values:dict):
         # self.output_df = self.output_df.append(values, ignore_index=True)
         temp = pd.DataFrame(values, columns=self.output_df.columns.to_list(), index=[item])
         self.output_df = pd.concat([self.output_df, temp], axis=0)
@@ -153,22 +134,51 @@ class output_sheet:
     # def apply_index(self):
     #     self.output_df.index = self.output_index
     def to_excel(self, path=None):
-        if path is None: path='3-result-{}.xlsx'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))
+        if path is None: path=os.path.join(output_dir, '2-result-{}.xlsx'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S')))
         # self.apply_index()
         self.output_df.to_excel(path)
 
+# %%
+output_obj = output_sheet(columns=['accuracy', 'precision', 'recall', 'f1-score', 'training_time', 'predict_time_per_image'])
 
-# In[ ]:
+# %%
+# Prediction function
+def get_prediction(model, test_images=test_images, label=label, batch_size=BATCHSIZE, verbose='auto'):
+    predict=[]
+    length=len(test_images)
+    for i in range(((length-1)//batch_size)+1):
+        inputimg=test_images[batch_size*i:batch_size*(i+1)]
+        test_batch=[]
+        for path in inputimg:
+            thisimg=np.array(Image.open(path))/255
+            test_batch.append(thisimg)
+        model_batch=model.predict(np.array(test_batch), verbose=verbose) #use master model to process the input image
+        predict_batch=list(np.argmax(model_batch,axis=1))
+        predict_batch=[label[con] for con in predict_batch]
+        predict.extend(predict_batch)
+    return predict
 
+# %%
+def generate_report(name:str, y_pred, y_true=test_labels, label=label, img_dir=img_dir, log_file=log_file, figsize=(18,14), log_classification_report:bool=True, save_img:bool=True, print_classifiaction_report:bool=True, display_confusion_matrix:bool=True):
+    # Generate classification report
+    report_str = classification_report(y_true,y_pred,zero_division=0)
+    if log_classification_report and log_file.writable(): log_file.write('******{}******\n'.format(name)+report_str+'\n')
+    if print_classifiaction_report: print(report_str)
+    # Generate confusion matrix
+    cm=confusion_matrix(y_true,y_pred)
+    f,ax=plt.subplots(figsize=figsize)
+    sns.heatmap(cm,annot=True,linewidth=0.5,linecolor="red",fmt=".0f",ax=ax)
+    ax.set_xticklabels(label.values())
+    ax.set_yticklabels(label.values())
+    plt.xlabel("y_pred")
+    plt.ylabel("y_true")
+    if save_img: plt.savefig(os.path.join(img_dir, '{}.pdf'.format(name)))
+    if display_confusion_matrix: plt.show()
 
-output_obj = output_sheet(columns=['accuracy', 'precision', 'recall', 'f1-score', 'training_time', 'testing_time'])
-
-
+# %% [markdown]
 # ### 1. Xception
 
-# In[20]:
-
-
+# %%
 #Single image prediction
 import cv2
 import matplotlib.pyplot as plt
@@ -188,33 +198,14 @@ print('Confidence level: %s'%prob)
 plt.imshow(img_show)
 plt.show()
 
-
-# In[12]:
-
-
+# %%
 # %%time
 import time
-predict=[]
-length=len(test_images)
 t1 = time.time()
-for i in range(length):
-    inputimg=test_images[i]
-    test_batch=[]
-    thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
-    #print(thisimg)
-    test_shape=(1,)+thisimg.shape
-    thisimg=thisimg.reshape(test_shape)
-    xception_model_batch=xception_model.predict(thisimg) #use master model to process the input image
-    #generate result by model 1
-    prob=xception_model_batch[0,np.argmax(xception_model_batch,axis=1)[0]]
-    res=label[np.argmax(xception_model_batch,axis=1)[0]]
-    predict.append(res)
+predict = get_prediction(xception_model)
 t2 = time.time()    
 
-
-# In[13]:
-
-
+# %%
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -224,52 +215,32 @@ print('Xception accuracy: %s'%acc)
 print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('Xception', predict)
 
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('Xception', **values)
 
-
+# %% [markdown]
 # ### 2. VGG16
 
-# In[14]:
-
-
+# %%
 # %%time
-predict=[]
-length=len(test_images)
 t1 = time.time()
-for i in range(length):
-    inputimg=test_images[i]
-    test_batch=[]
-    thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
-    #print(thisimg)
-    test_shape=(1,)+thisimg.shape
-    thisimg=thisimg.reshape(test_shape)
-    vgg_model_batch=vgg_model.predict(thisimg) #use master model to process the input image
-    #generate result by model 1
-    prob=vgg_model_batch[0,np.argmax(vgg_model_batch,axis=1)[0]]
-    res=label[np.argmax(vgg_model_batch,axis=1)[0]]
-    predict.append(res)
+prediction = get_prediction(vgg_model)
 t2 = time.time()     
 
-
-# In[15]:
-
-
+# %%
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -279,52 +250,32 @@ print('VGG16 accuracy: %s'%acc)
 print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('VGG16', predict)
 
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('VGG16', **values)
 
-
+# %% [markdown]
 # ### 3. VGG19
 
-# In[16]:
-
-
+# %%
 # %%time
-predict=[]
-length=len(test_images)
 t1 = time.time()
-for i in range(length):
-    inputimg=test_images[i]
-    test_batch=[]
-    thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
-    #print(thisimg)
-    test_shape=(1,)+thisimg.shape
-    thisimg=thisimg.reshape(test_shape)
-    vgg19_model_batch=vgg19_model.predict(thisimg) #use master model to process the input image
-    #generate result by model 1
-    prob=vgg19_model_batch[0,np.argmax(vgg19_model_batch,axis=1)[0]]
-    res=label[np.argmax(vgg19_model_batch,axis=1)[0]]
-    predict.append(res)
+prediction = get_prediction(vgg19_model)
 t2 = time.time()
 
-
-# In[17]:
-
-
+# %%
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -334,52 +285,32 @@ print('VGG19 accuracy: %s'%acc)
 print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('VGG19', predict)
 
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('VGG19', **values)
 
-
+# %% [markdown]
 # ### 4. Inception
 
-# In[18]:
-
-
+# %%
 # %%time
-predict=[]
-length=len(test_images)
 t1 = time.time()
-for i in range(length):
-    inputimg=test_images[i]
-    test_batch=[]
-    thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
-    #print(thisimg)
-    test_shape=(1,)+thisimg.shape
-    thisimg=thisimg.reshape(test_shape)
-    incep_model_batch=incep_model.predict(thisimg) #use master model to process the input image
-    #generate result by model 1
-    prob=incep_model_batch[0,np.argmax(incep_model_batch,axis=1)[0]]
-    res=label[np.argmax(incep_model_batch,axis=1)[0]]
-    predict.append(res)
+prediction = get_prediction(incep_model)
 t2 = time.time()
 
-
-# In[19]:
-
-
+# %%
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -389,52 +320,32 @@ print('inception accuracy: %s'%acc)
 print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('Inception', predict)
 
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('Inception', **values)
 
-
+# %% [markdown]
 # ### 5. InceptionResnet
 
-# In[20]:
-
-
+# %%
 # %%time
-predict=[]
-length=len(test_images)
 t1 = time.time()
-for i in range(length):
-    inputimg=test_images[i]
-    test_batch=[]
-    thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
-    #print(thisimg)
-    test_shape=(1,)+thisimg.shape
-    thisimg=thisimg.reshape(test_shape)
-    inres_model_batch=inres_model.predict(thisimg) #use master model to process the input image
-    #generate result by model 1
-    prob=inres_model_batch[0,np.argmax(inres_model_batch,axis=1)[0]]
-    res=label[np.argmax(inres_model_batch,axis=1)[0]]
-    predict.append(res)
+prediction = get_prediction(inres_model)
 t2 = time.time()
 
-
-# In[21]:
-
-
+# %%
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -444,52 +355,32 @@ print('inceptionresnet accuracy: %s'%acc)
 print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('InceptionResnet', predict)
 
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('InceptionResnet', **values)
 
-
+# %% [markdown]
 # ### 6. Resnet
 
-# In[23]:
-
-
+# %%
 # %%time
-predict=[]
-length=len(test_images)
 t1 = time.time()
-for i in range(length):
-    inputimg=test_images[i]
-    test_batch=[]
-    thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
-    #print(thisimg)
-    test_shape=(1,)+thisimg.shape
-    thisimg=thisimg.reshape(test_shape)
-    res_model_batch=res_model.predict(thisimg) #use master model to process the input image
-    #generate result by model 1
-    prob=res_model_batch[0,np.argmax(res_model_batch,axis=1)[0]]
-    res=label[np.argmax(res_model_batch,axis=1)[0]]
-    predict.append(res)
+prediction = get_prediction(res_model)
 t2 = time.time()
 
-
-# In[24]:
-
-
+# %%
 # %%time
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
@@ -500,39 +391,36 @@ print('resnet accuracy: %s'%acc)
 print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('Resnet', predict)
 
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('Resnet', **values)
 
-
+# %% [markdown]
 # Best performing single model (vgg):  
 # Accuracy: 99.96
 
+# %% [markdown]
 # # Bagging ensemble
 
-# In[25]:
-
-
+# %%
 import time
 predict=[]
 length=len(test_images)
 t1 = time.time()
-for i in range(((length-1)//127)+1):
-    inputimg=test_images[127*i:127*(i+1)]
+for i in range(((length-1)//BATCHSIZE)+1):
+    inputimg=test_images[BATCHSIZE*i:BATCHSIZE*(i+1)]
     test_batch=[]
     for path in inputimg:
         thisimg=np.array(Image.open(path))/255
@@ -575,20 +463,11 @@ for i in range(((length-1)//127)+1):
         predict_one=sorted(count.items(), key=operator.itemgetter(1),reverse=True)[0][0]
         predict_batch.append(predict_one)
 #     print('predict:',predict_batch)
-    predict.append(predict_batch)
+    predict.extend(predict_batch)
 t2 = time.time()
 print('The testing time is :%f seconds' % (t2-t1))
 
-
-# In[26]:
-
-
-predict=sum(predict,[])
-
-
-# In[27]:
-
-
+# %%
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -599,36 +478,30 @@ print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
 
+# %%
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('Bagging_ensemble', predict)
 
-# In[28]:
-
-
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
-
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('Bagging Ensemble', **values)
 
-
+# %% [markdown]
 # After bagging ensemble, the accuracy improved to 0.990
 
+# %% [markdown]
 # # Probability Averaging
 
-# In[29]:
-
-
+# %%
 from collections import defaultdict
 from PIL import Image
 from tensorflow.keras import Input
@@ -649,10 +522,7 @@ import tensorflow.keras.callbacks as kcallbacks
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
-
-# In[30]:
-
-
+# %%
 import time
 t1 = time.time()
 img=Input(shape=(224,224,3),name='img')
@@ -676,53 +546,15 @@ model.compile(loss='categorical_crossentropy',
 t2 = time.time()
 print('The training time is :%f seconds' % (t2-t1))
 
-
-# In[31]:
-
-
-#read images from validation folder
-rootdir = './test_224/'
-test_labels = []
-test_images=[]
-for subdir, dirs, files in os.walk(rootdir):
-    for file in files:
-        if not (file.endswith(".jpeg"))|(file.endswith(".jpg"))|(file.endswith(".png")):
-            continue
-        test_labels.append(subdir.split('/')[-1])
-        test_images.append(os.path.join(subdir, file))
-        
-print(test_labels[0],test_images[0])
-
-
-# In[32]:
-
-
+# %%
 #test the averaging model on the validation set
 import time
-predict=[]
-length=len(test_images)
 t3 = time.time()
-for i in range(((length-1)//127)+1):
-    inputimg=test_images[127*i:127*(i+1)]
-    test_batch=[]
-    for path in inputimg:
-        thisimg=np.array(Image.open(path))/255
-        test_batch.append(thisimg)
-    #print(i, np.array(test_batch).shape)
-    model_batch=model.predict(np.array(test_batch))
-    predict_batch=list(np.argmax(model_batch,axis=1))
-    predict_batch=[label[con] for con in predict_batch]
-    predict.append(predict_batch)
-
-predict=sum(predict,[])
-
+predict = get_prediction(model)
 t4 = time.time()
 print('The testing time is :%f seconds' % (t4-t3))
 
-
-# In[33]:
-
-
+# %%
 from sklearn.metrics import accuracy_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -733,35 +565,28 @@ print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
 
+# %%
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('Probability_averaging', predict)
 
-# In[34]:
-
-
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
-
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
     'training_time': t2-t1,
-    'testing_time': t4-t3
+    'predict_time_per_image': (t4-t3)/len_test
 }
 output_obj.add('Probability Averaging', **values)
 
-
+# %% [markdown]
 # # Concatenation
 
-# In[35]:
-
-
+# %%
 from tensorflow.keras import Input
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, LearningRateScheduler
 from tensorflow.keras.layers import concatenate,Dense,Flatten,Dropout
@@ -774,57 +599,37 @@ import os
 import tensorflow.keras as keras
 import tensorflow.keras.callbacks as kcallbacks
 
-
-# In[36]:
-
-
+# %%
 # for i,layer in enumerate(xception_model.layers):
 #     print(i,layer.name)
 
-
-# In[37]:
-
-
+# %%
 # for i,layer in enumerate(vgg_model.layers):
 #     print(i,layer.name)
 
-
-# In[38]:
-
-
+# %%
 # for i,layer in enumerate(vgg19_model.layers):
 #     print(i,layer.name)
 
-
-# In[39]:
-
-
+# %%
 # for i,layer in enumerate(incep_model.layers):
 #     print(i,layer.name)
 
-
-# In[40]:
-
-
+# %%
 # for i,layer in enumerate(inres_model.layers):
 #     print(i,layer.name)
 
-
+# %% [markdown]
 # ### Construct the ensemble model using the last "dense layer" of each base CNN model
 
-# In[ ]:
-
-
+# %%
 def get_last_layer(model, prefix='dense'):
     target_layer = None
     for layer in model.layers:
         if layer.name.startswith(prefix): target_layer=layer
     return target_layer
 
-
-# In[43]:
-
-
+# %%
 
 model1=Model(inputs=[xception_model.layers[0].get_input_at(0)],outputs=get_last_layer(model=xception_model, prefix='dense').output,name='xception')
 model2=Model(inputs=[vgg_model.layers[0].get_input_at(0)],outputs=get_last_layer(model=vgg_model, prefix='dense').output,name='vgg')
@@ -832,10 +637,7 @@ model3=Model(inputs=[vgg19_model.layers[0].get_input_at(0)],outputs=get_last_lay
 model4=Model(inputs=[incep_model.layers[0].get_input_at(0)],outputs=get_last_layer(model=incep_model, prefix='dense').output,name='incep')
 model5=Model(inputs=[inres_model.layers[0].get_input_at(0)],outputs=get_last_layer(model=inres_model, prefix='dense').output,name='inres')
 
-
-# In[44]:
-
-
+# %%
 #plot the figures
 class LossHistory(keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
@@ -882,16 +684,10 @@ class LossHistory(keras.callbacks.Callback):
             'val_loss': self.val_loss[target_type][max_index]
             }
 
-
-# In[45]:
-
-
+# %%
 ensemble_history= LossHistory()
 
-
-# In[ ]:
-
-
+# %%
 # Measure the running time of model training
 class TimeMeasurement(keras.callbacks.Callback):
     def __init__(self):
@@ -910,61 +706,32 @@ class TimeMeasurement(keras.callbacks.Callback):
         if (self.start_time is None or self.stop_time is None): raise Exception("Wrong Time Measurement")
         else: return self.stop_time-self.start_time
 
-
-# In[ ]:
-
-
+# %%
 timer = TimeMeasurement()
 
-
-# In[46]:
-
-
-#generate training and test images
-TARGET_SIZE=(224,224)
-INPUT_SIZE=(224,224,3)
-BATCHSIZE=128	#could try 128 or 32
-
-#Normalization
+# %%
 train_datagen = ImageDataGenerator(rescale=1./255)
-
-test_datagen = ImageDataGenerator(rescale=1./255)
 
 train_generator = train_datagen.flow_from_directory(
         './train_224/',
         target_size=TARGET_SIZE,
         batch_size=BATCHSIZE,
         class_mode='categorical')
-validation_generator = test_datagen.flow_from_directory(
-        './test_224/',
-        target_size=TARGET_SIZE,
-        batch_size=BATCHSIZE,
-        class_mode='categorical')
-num_class = validation_generator.num_classes
 
-
-# In[47]:
-
-
+# %%
 def lr_decay(epoch):
     lrs = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.0001,0.00001,0.000001,
            0.000001,0.000001,0.000001,0.000001,0.0000001,0.0000001,0.0000001,0.0000001,0.0000001,0.0000001
           ]
     return lrs[epoch]
 
-
-# In[48]:
-
-
+# %%
 auto_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=1, verbose=0, mode='auto', epsilon=0.0001, cooldown=0, min_lr=0)
 my_lr = LearningRateScheduler(lr_decay)
 
-
-# In[49]:
-
-
+# %%
 def ensemble(num_class,epochs,savepath='./ensemble.h5'):
-    img=Input(shape=(224,224,3),name='img')
+    img=Input(shape=INPUT_SIZE,name='img')
     feature1=model1(img)
     feature2=model2(img)
     feature3=model3(img)
@@ -979,7 +746,7 @@ def ensemble(num_class,epochs,savepath='./ensemble.h5'):
                   optimizer=opt,
                   metrics=['accuracy'])
     #train model
-    earlyStopping=kcallbacks.EarlyStopping(monitor='val_acc',patience=2, verbose=1, mode='auto')
+    earlyStopping=kcallbacks.EarlyStopping(monitor='val_acc',patience=2, verbose=1, mode='auto', restore_best_weights=True)
     saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_acc', verbose=1, save_best_only=True, mode='auto')
     hist=model.fit_generator(
         train_generator,
@@ -989,66 +756,23 @@ def ensemble(num_class,epochs,savepath='./ensemble.h5'):
         validation_steps=len(validation_generator),
         callbacks=[earlyStopping,saveBestModel,ensemble_history,auto_lr,timer],
     )
+    return model
 
-
-# In[50]:
-
-
+# %%
 ensemble_model=ensemble(num_class=num_class,epochs=20)
 
+# %%
+# ensemble_model=load_model('./ensemble.h5')
 
-# In[51]:
-
-
-ensemble_model=load_model('./ensemble.h5')
-
-
-# In[52]:
-
-
-#read images from validation folder
-rootdir = './test_224/'
-test_labels = []
-test_images=[]
-for subdir, dirs, files in os.walk(rootdir):
-    for file in files:
-        if not (file.endswith(".jpeg"))|(file.endswith(".jpg"))|(file.endswith(".png")):
-            continue
-        test_labels.append(subdir.split('/')[-1])
-        test_images.append(os.path.join(subdir, file))
-        
-print(test_labels[0],test_images[0])
-
-
-# In[53]:
-
-
+# %%
 #test the averaging model on the validation set
 import time
-predict=[]
-length=len(test_images)
 t1 = time.time()
-for i in range(((length-1)//127)+1):
-    inputimg=test_images[127*i:127*(i+1)]
-    test_batch=[]
-    for path in inputimg:
-        thisimg=np.array(Image.open(path))/255
-        test_batch.append(thisimg)
-    #print(i, np.array(test_batch).shape)
-    ensemble_model_batch=ensemble_model.predict(np.array(test_batch))
-    predict_batch=list(np.argmax(ensemble_model_batch,axis=1))
-    predict_batch=[label[con] for con in predict_batch]
-    predict.append(predict_batch)
-
-predict=sum(predict,[])
-
+predict = get_prediction(ensemble_model)
 t2 = time.time()
 print('The testing time is :%f seconds' % (t2-t1))
 
-
-# In[54]:
-
-
+# %%
 from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score
 acc=accuracy_score(test_labels,predict)
 pre=precision_score(test_labels,predict,average='weighted')
@@ -1059,32 +783,26 @@ print('precision: %s'%pre)
 print('recall: %s'%re)
 print('f1: %s'%f1)
 
+# %%
+# from sklearn.metrics import classification_report, confusion_matrix
+# print(confusion_matrix(test_labels, predict))
+# target_names = label.values()
+# print(classification_report(test_labels, predict, target_names=target_names))
+generate_report('Concatenation', predict)
 
-# In[55]:
-
-
-from sklearn.metrics import classification_report, confusion_matrix
-print(confusion_matrix(test_labels, predict))
-target_names = label.values()
-print(classification_report(test_labels, predict, target_names=target_names))
-
-
-# In[ ]:
-
-
+# %%
 values = {
     'accuracy': acc,
     'precision': pre,
     'recall': re,
     'f1-score': f1,
     'training_time': timer.get_processing_time(),
-    'testing_time': t2-t1
+    'predict_time_per_image': (t2-t1)/len_test
 }
 output_obj.add('Concatenation', **values)
 
-
-# In[ ]:
-
-
+# %%
 output_obj.to_excel()
+log_file.close()
+
 
