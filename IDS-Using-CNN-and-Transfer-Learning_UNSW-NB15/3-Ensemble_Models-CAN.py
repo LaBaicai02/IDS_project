@@ -159,7 +159,7 @@ def get_prediction(model, test_images=test_images, label=label, batch_size=BATCH
     return predict
 
 # %%
-def generate_report(name:str, y_pred, y_true=test_labels, label=label, img_dir=img_dir, log_file=log_file, figsize=(18,14), log_classification_report:bool=True, save_img:bool=True, print_classifiaction_report:bool=True, display_confusion_matrix:bool=True):
+def generate_report(name:str, y_pred, y_true=test_labels, label=label, img_dir=img_dir, log_file=log_file, figsize=(18,14), log_classification_report:bool=True, save_img:bool=True, print_classifiaction_report:bool=True, display_confusion_matrix:bool=False):
     # Generate classification report
     report_str = classification_report(y_true,y_pred,zero_division=0)
     if log_classification_report and log_file.writable(): log_file.write('******{}******\n'.format(name)+report_str+'\n')
