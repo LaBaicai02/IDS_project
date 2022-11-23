@@ -539,7 +539,7 @@ output=Average()([feature1,feature2,feature3]) #add the confidence lists generat
 model=Model(inputs=img,outputs=output)
 
 #the optimization function
-opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+opt = keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
 model.compile(loss='categorical_crossentropy',
               optimizer=opt,
               metrics=['accuracy'])
@@ -741,7 +741,7 @@ def ensemble(num_class,epochs,savepath='./ensemble.h5'):
     x=Dropout(0.25)(x)
     output=Dense(num_class,activation='softmax',name='output')(x)
     model=Model(inputs=img,outputs=output)
-    opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+    opt = keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
     model.compile(loss='categorical_crossentropy',
                   optimizer=opt,
                   metrics=['accuracy'])

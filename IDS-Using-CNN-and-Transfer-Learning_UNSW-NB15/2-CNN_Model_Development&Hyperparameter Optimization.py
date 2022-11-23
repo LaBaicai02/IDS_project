@@ -310,7 +310,7 @@ def cnn_by_own(train_generator=train_generator,validation_generator=validation_g
 
 # ### Model 2: Xception
 
-def xception(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=131,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./xception.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+def xception(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=131,learning_rate=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./xception.h5',input_shape=INPUT_SIZE,return_model:bool=False):
     model_fine_tune = Xception(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:		#could be tuned to be 50, 100, or 131
         layer.trainable = False
@@ -321,7 +321,7 @@ def xception(train_generator=train_generator,validation_generator=validation_gen
     model=Dropout(dropout_rate)(model)
     model = Dense(num_class, activation='softmax')(model)
     model = Model(model_fine_tune.input, model, name='xception')
-    opt = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+    opt = keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
@@ -351,7 +351,7 @@ def xception(train_generator=train_generator,validation_generator=validation_gen
 
 # ### Model 3: VGG16
 
-def vgg16(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=15,lr=0.001,patience=2, dropout_rate=0.5,verbose=0, savepath='./VGG16.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+def vgg16(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=15,learning_rate=0.001,patience=2, dropout_rate=0.5,verbose=0, savepath='./VGG16.h5',input_shape=INPUT_SIZE,return_model:bool=False):
     model_fine_tune = VGG16(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 5-18
         layer.trainable = False
@@ -362,7 +362,7 @@ def vgg16(train_generator=train_generator,validation_generator=validation_genera
     model=Dropout(dropout_rate)(model)
     model = Dense(num_class, activation='softmax')(model)
     model = Model(model_fine_tune.input, model, name='vgg')
-    opt = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    opt = keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
@@ -393,7 +393,7 @@ def vgg16(train_generator=train_generator,validation_generator=validation_genera
 
 # ### Model 4: VGG19
 
-def vgg19(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=19,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./VGG19.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+def vgg19(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=19,learning_rate=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./VGG19.h5',input_shape=INPUT_SIZE,return_model:bool=False):
     model_fine_tune = VGG19(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 5-18
         layer.trainable = False
@@ -404,7 +404,7 @@ def vgg19(train_generator=train_generator,validation_generator=validation_genera
     model=Dropout(dropout_rate)(model)
     model = Dense(num_class, activation='softmax')(model)
     model = Model(model_fine_tune.input, model, name='vgg')
-    opt = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    opt = keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
@@ -435,7 +435,7 @@ def vgg19(train_generator=train_generator,validation_generator=validation_genera
 
 # ### Model 5: ResNet
 
-def resnet(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=120,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./resnet.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+def resnet(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=120,learning_rate=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./resnet.h5',input_shape=INPUT_SIZE,return_model:bool=False):
     model_fine_tune = ResNet50(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 50-150
         layer.trainable = False
@@ -446,7 +446,7 @@ def resnet(train_generator=train_generator,validation_generator=validation_gener
     model=Dropout(dropout_rate)(model)
     model = Dense(num_class, activation='softmax')(model)
     model = Model(model_fine_tune.input, model, name='resnet')
-    opt = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    opt = keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
@@ -476,7 +476,7 @@ def resnet(train_generator=train_generator,validation_generator=validation_gener
 
 # ### Model 6: Inception
 
-def inception(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=35,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inception.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+def inception(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=35,learning_rate=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inception.h5',input_shape=INPUT_SIZE,return_model:bool=False):
     model_fine_tune = InceptionV3(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 50-150
         layer.trainable = False
@@ -487,7 +487,7 @@ def inception(train_generator=train_generator,validation_generator=validation_ge
     model=Dropout(dropout_rate)(model)
     model = Dense(num_class, activation='softmax')(model)
     model = Model(model_fine_tune.input, model, name='resnet')
-    opt = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    opt = keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
@@ -517,7 +517,7 @@ def inception(train_generator=train_generator,validation_generator=validation_ge
 
 # ### Model 7: InceptionResnet
 
-def inceptionresnet(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=500,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inceptionresnet.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+def inceptionresnet(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=500,learning_rate=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inceptionresnet.h5',input_shape=INPUT_SIZE,return_model:bool=False):
     model_fine_tune = InceptionResNetV2(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 400-550
         layer.trainable = False
@@ -528,7 +528,7 @@ def inceptionresnet(train_generator=train_generator,validation_generator=validat
     model=Dropout(dropout_rate)(model)
     model = Dense(num_class, activation='softmax')(model)
     model = Model(model_fine_tune.input, model, name='resnet')
-    opt = keras.optimizers.Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    opt = keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
@@ -612,7 +612,7 @@ def objective_xception(params, num_class=num_class, history=history_hpo, test_la
         'frozen': int(params['frozen']),
         'epochs': int(params['epochs']),
         'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
+        'learning_rate': abs(float(params['learning_rate'])),
         'dropout_rate': abs(float(params['dropout_rate'])),
     }
 
@@ -634,7 +634,7 @@ def objective_vgg16(params, num_class=num_class, history=history_hpo, test_label
         'frozen': int(params['frozen']),
         'epochs': int(params['epochs']),
         'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
+        'learning_rate': abs(float(params['learning_rate'])),
         'dropout_rate': abs(float(params['dropout_rate'])),
     }
 
@@ -656,7 +656,7 @@ def objective_vgg19(params, num_class=num_class, history=history_hpo, test_label
         'frozen': int(params['frozen']),
         'epochs': int(params['epochs']),
         'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
+        'learning_rate': abs(float(params['learning_rate'])),
         'dropout_rate': abs(float(params['dropout_rate'])),
     }
 
@@ -678,7 +678,7 @@ def objective_resnet(params, num_class=num_class, history=history_hpo, test_labe
         'frozen': int(params['frozen']),
         'epochs': int(params['epochs']),
         'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
+        'learning_rate': abs(float(params['learning_rate'])),
         'dropout_rate': abs(float(params['dropout_rate'])),
     }
 
@@ -700,7 +700,7 @@ def objective_inception(params, num_class=num_class, history=history_hpo, test_l
         'frozen': int(params['frozen']),
         'epochs': int(params['epochs']),
         'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
+        'learning_rate': abs(float(params['learning_rate'])),
         'dropout_rate': abs(float(params['dropout_rate'])),
     }
 
@@ -722,7 +722,7 @@ def objective_inceptionresnet(params, num_class=num_class, history=history_hpo, 
         'frozen': int(params['frozen']),
         'epochs': int(params['epochs']),
         'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
+        'learning_rate': abs(float(params['learning_rate'])),
         'dropout_rate': abs(float(params['dropout_rate'])),
     }
 
@@ -890,7 +890,7 @@ if __name__ == '__main__':
         'frozen': hp.choice('frozen', available_frozen),
         'epochs': hp.quniform('epochs', 5, 21, 5),
         'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+        'learning_rate': hp.quniform('learning_rate', 0.001, 0.006, 0.001),
         'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
     }
 
@@ -909,7 +909,7 @@ if __name__ == '__main__':
             'frozen': available_frozen[int(best['frozen'])],
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -934,7 +934,7 @@ if __name__ == '__main__':
             'frozen': available_frozen[int(best['frozen'])],
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -952,7 +952,7 @@ if __name__ == '__main__':
         'frozen': hp.quniform('frozen', 15, 18, 1),
         'epochs': hp.quniform('epochs', 5, 21, 5),
         'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+        'learning_rate': hp.quniform('learning_rate', 0.001, 0.006, 0.001),
         'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
     }
 
@@ -971,7 +971,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -998,7 +998,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1014,7 +1014,7 @@ if __name__ == '__main__':
         'frozen': hp.quniform('frozen', 15, 18, 1),
         'epochs': hp.quniform('epochs', 5, 21, 5),
         'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+        'learning_rate': hp.quniform('learning_rate', 0.001, 0.006, 0.001),
         'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
     }
 
@@ -1033,7 +1033,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1061,7 +1061,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1079,7 +1079,7 @@ if __name__ == '__main__':
         'frozen': hp.quniform('frozen', 50, 150, 10),
         'epochs': hp.quniform('epochs', 5, 21, 5),
         'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+        'learning_rate': hp.quniform('learning_rate', 0.001, 0.006, 0.001),
         'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
     }
 
@@ -1098,7 +1098,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1126,7 +1126,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1144,7 +1144,7 @@ if __name__ == '__main__':
         'frozen': hp.quniform('frozen', 50, 150, 10),
         'epochs': hp.quniform('epochs', 5, 21, 5),
         'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+        'learning_rate': hp.quniform('learning_rate', 0.001, 0.006, 0.001),
         'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
     }
 
@@ -1163,7 +1163,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1191,7 +1191,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1209,7 +1209,7 @@ if __name__ == '__main__':
         'frozen': hp.quniform('frozen', 400, 500, 10),
         'epochs': hp.quniform('epochs', 5, 21, 5),
         'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+        'learning_rate': hp.quniform('learning_rate', 0.001, 0.006, 0.001),
         'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
     }
 
@@ -1228,7 +1228,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
@@ -1256,7 +1256,7 @@ if __name__ == '__main__':
             'frozen': int(best['frozen']),
             'epochs': int(best['epochs']),
             'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
+            'learning_rate': abs(float(best['learning_rate'])),
             'dropout_rate': abs(float(best['dropout_rate'])),
         }
     best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
