@@ -644,17 +644,17 @@ class LossHistory(keras.callbacks.Callback):
         self.losses = {'batch':[], 'epoch':[]}
         self.accuracy = {'batch':[], 'epoch':[]}
         self.val_loss = {'batch':[], 'epoch':[]}
-        self.val_acc = {'batch':[], 'epoch':[]}
+        self.val_accuracy = {'batch':[], 'epoch':[]}
     def on_batch_end(self, batch, logs={}):
         self.losses['batch'].append(logs.get('loss'))
-        self.accuracy['batch'].append(logs.get('acc'))
+        self.accuracy['batch'].append(logs.get('accuracy'))
         self.val_loss['batch'].append(logs.get('val_loss'))
-        self.val_acc['batch'].append(logs.get('val_acc'))
+        self.val_accuracy['batch'].append(logs.get('val_accuracy'))
     def on_epoch_end(self, batch, logs={}):
         self.losses['epoch'].append(logs.get('loss'))
-        self.accuracy['epoch'].append(logs.get('acc'))
+        self.accuracy['epoch'].append(logs.get('accuracy'))
         self.val_loss['epoch'].append(logs.get('val_loss'))
-        self.val_acc['epoch'].append(logs.get('val_acc'))
+        self.val_accuracy['epoch'].append(logs.get('val_accuracy'))
     def loss_plot(self, loss_type):
         iters = range(len(self.losses[loss_type]))
         plt.figure()
@@ -665,7 +665,7 @@ class LossHistory(keras.callbacks.Callback):
             # loss
             plt.plot(iters, self.losses[loss_type], 'g', label='train loss')
             # val_acc
-            plt.plot(iters, self.val_acc[loss_type], 'b', label='val acc')
+            plt.plot(iters, self.val_accuracy[loss_type], 'b', label='val acc')
             # val_loss
             plt.plot(iters, self.val_loss[loss_type], 'k', label='val loss')
         plt.grid(True)
@@ -680,7 +680,7 @@ class LossHistory(keras.callbacks.Callback):
         return {
             'accuracy': self.accuracy[target_type][max_index], 
             'loss': self.losses[target_type][max_index], 
-            'val_acc': self.val_acc[target_type][max_index], 
+            'val_accuracy': self.val_accuracy[target_type][max_index], 
             'val_loss': self.val_loss[target_type][max_index]
             }
 
@@ -746,9 +746,9 @@ def ensemble(num_class,epochs,savepath='./ensemble.h5'):
                   optimizer=opt,
                   metrics=['accuracy'])
     #train model
-    earlyStopping=kcallbacks.EarlyStopping(monitor='val_acc',patience=2, verbose=1, mode='auto', restore_best_weights=True)
-    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_acc', verbose=1, save_best_only=True, mode='auto')
-    hist=model.fit_generator(
+    earlyStopping=kcallbacks.EarlyStopping(monitor='val_accuracy',patience=2, verbose=1, mode='auto', restore_best_weights=True)
+    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='auto')
+    hist=model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,

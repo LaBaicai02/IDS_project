@@ -129,7 +129,7 @@ class LossHistory(keras.callbacks.Callback):
         self.losses = {'batch':[], 'epoch':[]}
         self.accuracy = {'batch':[], 'epoch':[]}
         self.val_loss = {'batch':[], 'epoch':[]}
-        self.val_acc = {'batch':[], 'epoch':[]}
+        self.val_accuracy = {'batch':[], 'epoch':[]}
         # need extra data --> reset recording list
         # These matrics only make sense over the entire epoch
         if self.extra_data:
@@ -141,14 +141,14 @@ class LossHistory(keras.callbacks.Callback):
             self.prediction = []
     def on_batch_end(self, batch, logs={}):
         self.losses['batch'].append(logs.get('loss'))
-        self.accuracy['batch'].append(logs.get('acc'))
+        self.accuracy['batch'].append(logs.get('accuracy'))
         self.val_loss['batch'].append(logs.get('val_loss'))
-        self.val_acc['batch'].append(logs.get('val_acc'))
+        self.val_accuracy['batch'].append(logs.get('val_accuracy'))
     def on_epoch_end(self, batch, logs={}):
         self.losses['epoch'].append(logs.get('loss'))
-        self.accuracy['epoch'].append(logs.get('acc'))
+        self.accuracy['epoch'].append(logs.get('accuracy'))
         self.val_loss['epoch'].append(logs.get('val_loss'))
-        self.val_acc['epoch'].append(logs.get('val_acc'))
+        self.val_accuracy['epoch'].append(logs.get('val_accuracy'))
         # need extra data --> calculate and record
         if self.extra_data:
             # Get prediciton
@@ -176,7 +176,7 @@ class LossHistory(keras.callbacks.Callback):
             # loss
             plt.plot(iters, self.losses[loss_type], 'g', label='train loss')
             # val_acc
-            plt.plot(iters, self.val_acc[loss_type], 'b', label='val acc')
+            plt.plot(iters, self.val_accuracy[loss_type], 'b', label='val acc')
             # val_loss
             plt.plot(iters, self.val_loss[loss_type], 'k', label='val loss')
         else:
@@ -193,7 +193,7 @@ class LossHistory(keras.callbacks.Callback):
         temp={
             'accuracy': self.accuracy[target_type][max_index], 
             'loss': self.losses[target_type][max_index], 
-            'val_acc': self.val_acc[target_type][max_index], 
+            'val_accuracy': self.val_accuracy[target_type][max_index], 
             'val_loss': self.val_loss[target_type][max_index]
             }
         # Add extra data if needed and available
@@ -256,7 +256,7 @@ timer = TimeMeasurement()
 # ### Define the output sheet
 
 class output_sheet:
-    def __init__(self, columns:list=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image']):
+    def __init__(self, columns:list=['accuracy', 'loss', 'val_accuracy', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image']):
         self.output_df = pd.DataFrame(columns=columns)
         # self.output_index = list()
     def add(self, item:str, **values:dict):
@@ -290,10 +290,10 @@ def cnn_by_own(train_generator=train_generator,validation_generator=validation_g
     model.add(Dense(num_class,activation='softmax'))
     model.compile(loss='categorical_crossentropy',optimizer='adam',metrics=['accuracy'])
     #train model
-    earlyStopping=kcallbacks.EarlyStopping(monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)
-    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_acc', verbose=verbose, save_best_only=True, mode='auto')
+    earlyStopping=kcallbacks.EarlyStopping(monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)
+    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_accuracy', verbose=verbose, save_best_only=True, mode='auto')
     callbacks=[history,timer,earlyStopping,saveBestModel]
-    hist=model.fit_generator(
+    hist=model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
@@ -325,15 +325,15 @@ def xception(train_generator=train_generator,validation_generator=validation_gen
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#patience could be tuned by 2 and 3
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#patience could be tuned by 2 and 3
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
     callbacks=[history,timer,earlyStopping,saveBestModel]
-    hist = model.fit_generator(
+    hist = model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
@@ -366,15 +366,15 @@ def vgg16(train_generator=train_generator,validation_generator=validation_genera
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
     callbacks=[history,timer,earlyStopping,saveBestModel]
-    hist = model.fit_generator(
+    hist = model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
@@ -408,15 +408,15 @@ def vgg19(train_generator=train_generator,validation_generator=validation_genera
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
     callbacks=[history,timer,earlyStopping,saveBestModel]
-    hist = model.fit_generator(
+    hist = model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
@@ -450,15 +450,15 @@ def resnet(train_generator=train_generator,validation_generator=validation_gener
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
     callbacks=[history,timer,earlyStopping,saveBestModel]
-    hist = model.fit_generator(
+    hist = model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
@@ -491,15 +491,15 @@ def inception(train_generator=train_generator,validation_generator=validation_ge
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
     callbacks=[history,timer,earlyStopping,saveBestModel]
-    hist = model.fit_generator(
+    hist = model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
@@ -532,15 +532,15 @@ def inceptionresnet(train_generator=train_generator,validation_generator=validat
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
     callbacks=[history,timer,earlyStopping,saveBestModel]
-    hist = model.fit_generator(
+    hist = model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
@@ -739,7 +739,7 @@ if __name__ == '__main__':
     starting_time = time.time()
 
     # Prepare output_sheet
-    output = output_sheet(columns=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image'])
+    output = output_sheet(columns=['accuracy', 'loss', 'val_accuracy', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image'])
 
     # # Construct CNN models
 
@@ -1272,14 +1272,14 @@ if __name__ == '__main__':
 
     # Online GPU renting platform specification
     # WeChat Message
-    import requests
-    resp = requests.get(
-        "https://www.autodl.com/api/v1/wechat/message/push?token={token}&title={title}&name={name}&content={content}".format(
-            token="",
-            title="Running Completed",
-            name="2-CNN_Model_Development&Hyperparameter Optimization.py",
-            content="Time Used: {}".format(time.time()-starting_time))
-    )
-    print(resp.content.decode())
+    # import requests
+    # resp = requests.get(
+    #     "https://www.autodl.com/api/v1/wechat/message/push?token={token}&title={title}&name={name}&content={content}".format(
+    #         token="",
+    #         title="Running Completed",
+    #         name="2-CNN_Model_Development&Hyperparameter Optimization.py",
+    #         content="Time Used: {}".format(time.time()-starting_time))
+    # )
+    # print(resp.content.decode())
 
 

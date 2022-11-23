@@ -3,3 +3,4 @@ test*
 *.png
 *.pdf
 data
+output/*
