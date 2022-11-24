@@ -12,14 +12,11 @@
 # &nbsp; 2): Construct CNN models (a CNN model by own, Xception, VGG16, VGG19, Resnet, Inception, InceptionResnet)  
 # &nbsp; 3): Tune the hyperparameters of CNN models (hyperparameter optimization)  
 
-# Change Tensorflow Logging Level
-
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-
 # ## Import libraries
 
-from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+# In[1]:
+
+
 from PIL import Image
 from sklearn.metrics import classification_report,confusion_matrix,accuracy_score,precision_score,recall_score,f1_score,precision_recall_fscore_support
 from tensorflow.keras.applications.inception_resnet_v2 import InceptionResNetV2
@@ -37,31 +34,31 @@ from tensorflow.keras.utils import plot_model
 import datetime
 import math
 import matplotlib.pyplot as plt
-import multiprocessing
 import numpy as np
+import os
 import pandas as pd
 import random
+import seaborn as sns
 import sklearn.metrics as metrics
-import statistics 
 import tensorflow.keras as keras
 import tensorflow.keras.callbacks as kcallbacks
 import time
-import seaborn as sns
 
-# ### Define the image plotting functions
+
+# ## Generate Training and Test Images
+
+# In[2]:
+
 
 #generate training and test images
 TARGET_SIZE=(224,224)
 INPUT_SIZE=(224,224,3)
 BATCHSIZE=128	#could try 128 or 32
 
-# ## Generate Training and Test Images
-
 train_rootdir = './train_224/'
 test_rootdir = './test_224/'
 
-# Normalization
-
+#Normalization
 train_datagen = ImageDataGenerator(rescale=1./255)
 
 test_datagen = ImageDataGenerator(rescale=1./255)
@@ -76,10 +73,12 @@ validation_generator = test_datagen.flow_from_directory(
         target_size=TARGET_SIZE,
         batch_size=BATCHSIZE,
         class_mode='categorical')
-num_class = validation_generator.num_classes
-# num_class = len(os.listdir('./test_224'))
+num_class = train_generator.num_classes
 
-# Prepare test data for prediction
+
+# In[3]:
+
+
 test_labels = []
 test_images=[]
 for subdir, dirs, files in os.walk(test_rootdir):
@@ -92,6 +91,10 @@ for subdir, dirs, files in os.walk(test_rootdir):
 label=validation_generator.class_indices
 label={v: k for k, v in label.items()}
 
+
+# In[4]:
+
+
 # Prepare the output dir
 output_dir = 'output/CNN_based/2-output-{}'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))
 img_dir = os.path.join(output_dir, 'img')
@@ -99,7 +102,10 @@ os.makedirs(img_dir)
 # Prepare the log file
 log_file = open(os.path.join(output_dir, 'classification_report-{}'.format(datetime.datetime.now().strftime('%y%m%d-%H%M%S'))), 'w+')
 
-# Prediction function
+
+# In[5]:
+
+
 def get_prediction(model, test_images=test_images, label=label, batch_size=BATCHSIZE, verbose='auto'):
     predict=[]
     length=len(test_images)
@@ -109,11 +115,23 @@ def get_prediction(model, test_images=test_images, label=label, batch_size=BATCH
         for path in inputimg:
             thisimg=np.array(Image.open(path))/255
             test_batch.append(thisimg)
+        # thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
+        #print(thisimg)
+        # test_shape=(1,)+thisimg.shape
+        # thisimg=thisimg.reshape(test_shape)
         model_batch=model.predict(np.array(test_batch), verbose=verbose) #use master model to process the input image
+        #generate result by model 1
+        # prob=model_batch[0,np.argmax(model_batch,axis=1)[0]]
         predict_batch=list(np.argmax(model_batch,axis=1))
         predict_batch=[label[con] for con in predict_batch]
         predict.extend(predict_batch)
     return predict
+
+
+# ### Define the image plotting functions
+
+# In[6]:
+
 
 #plot the figures
 #when extra_data enabled please put this callback before early_stopping in case of any problem
@@ -129,7 +147,7 @@ class LossHistory(keras.callbacks.Callback):
         self.losses = {'batch':[], 'epoch':[]}
         self.accuracy = {'batch':[], 'epoch':[]}
         self.val_loss = {'batch':[], 'epoch':[]}
-        self.val_acc = {'batch':[], 'epoch':[]}
+        self.val_accuracy = {'batch':[], 'epoch':[]}
         # need extra data --> reset recording list
         # These matrics only make sense over the entire epoch
         if self.extra_data:
@@ -141,14 +159,14 @@ class LossHistory(keras.callbacks.Callback):
             self.prediction = []
     def on_batch_end(self, batch, logs={}):
         self.losses['batch'].append(logs.get('loss'))
-        self.accuracy['batch'].append(logs.get('acc'))
+        self.accuracy['batch'].append(logs.get('accuracy'))
         self.val_loss['batch'].append(logs.get('val_loss'))
-        self.val_acc['batch'].append(logs.get('val_acc'))
+        self.val_accuracy['batch'].append(logs.get('val_accuracy'))
     def on_epoch_end(self, batch, logs={}):
         self.losses['epoch'].append(logs.get('loss'))
-        self.accuracy['epoch'].append(logs.get('acc'))
+        self.accuracy['epoch'].append(logs.get('accuracy'))
         self.val_loss['epoch'].append(logs.get('val_loss'))
-        self.val_acc['epoch'].append(logs.get('val_acc'))
+        self.val_accuracy['epoch'].append(logs.get('val_accuracy'))
         # need extra data --> calculate and record
         if self.extra_data:
             # Get prediciton
@@ -176,7 +194,7 @@ class LossHistory(keras.callbacks.Callback):
             # loss
             plt.plot(iters, self.losses[loss_type], 'g', label='train loss')
             # val_acc
-            plt.plot(iters, self.val_acc[loss_type], 'b', label='val acc')
+            plt.plot(iters, self.val_accuracy[loss_type], 'b', label='val acc')
             # val_loss
             plt.plot(iters, self.val_loss[loss_type], 'k', label='val loss')
         else:
@@ -193,7 +211,7 @@ class LossHistory(keras.callbacks.Callback):
         temp={
             'accuracy': self.accuracy[target_type][max_index], 
             'loss': self.losses[target_type][max_index], 
-            'val_acc': self.val_acc[target_type][max_index], 
+            'val_accuracy': self.val_accuracy[target_type][max_index], 
             'val_loss': self.val_loss[target_type][max_index]
             }
         # Add extra data if needed and available
@@ -203,35 +221,41 @@ class LossHistory(keras.callbacks.Callback):
             temp['f1-score']=self.f1_score[max_index]
             temp['predict_time_per_image']=self.predict_time[max_index]
         return temp
-    def get_prediction(self, epoch='best'):
+    def generate_report(self, name:str, img_dir=img_dir, log_file=log_file, epoch='best', figsize=(18,14), log_classification_report:bool=True, save_img:bool=True, print_classifiaction_report:bool=True, display_confusion_matrix:bool=True):
         if not self.extra_data:
             raise Exception('Prediction record unavailable')
         # Get prediction
         if epoch=='best': epoch=self.accuracy['epoch'].index(max(self.accuracy['epoch']))
         elif epoch=='worst': epoch=self.accuracy['epoch'].index(min(self.accuracy['epoch']))
         else: epoch-=1
-        return self.prediction[epoch]
+        y_pred = self.prediction[epoch]
+        # Generate classification report
+        report_str = classification_report(self.test_labels,y_pred,zero_division=0)
+        if log_classification_report and log_file.writable(): log_file.write('******{}******\n'.format(name)+report_str+'\n')
+        if print_classifiaction_report: print(report_str)
+        # Generate confusion matrix
+        cm=confusion_matrix(self.test_labels,y_pred)
+        f,ax=plt.subplots(figsize=figsize)
+        sns.heatmap(cm,annot=True,linewidth=0.5,linecolor="red",fmt=".0f",ax=ax)
+        ax.set_xticklabels(self.label.values())
+        ax.set_yticklabels(self.label.values())
+        plt.xlabel("y_pred")
+        plt.ylabel("y_true")
+        if save_img: plt.savefig(os.path.join(img_dir, '{}.pdf'.format(name)))
+        if display_confusion_matrix: plt.show()
 
-history_this= LossHistory(need_extra_data=True)
+
+# In[7]:
+
+
+history_this = LossHistory(need_extra_data=True)
 history_hpo = LossHistory(need_extra_data=False)
 
-def generate_report(name:str, y_pred, y_true=test_labels, label=label, img_dir=img_dir, log_file=log_file, figsize=(18,14), log_classification_report:bool=True, save_img:bool=True, print_classifiaction_report:bool=True, display_confusion_matrix:bool=False):
-    # Generate classification report
-    report_str = classification_report(y_true,y_pred,zero_division=0)
-    if log_classification_report and log_file.writable(): log_file.write('******{}******\n'.format(name)+report_str+'\n')
-    if print_classifiaction_report: print(report_str)
-    # Generate confusion matrix
-    cm=confusion_matrix(y_true,y_pred)
-    f,ax=plt.subplots(figsize=figsize)
-    sns.heatmap(cm,annot=True,linewidth=0.5,linecolor="red",fmt=".0f",ax=ax)
-    ax.set_xticklabels(label.values())
-    ax.set_yticklabels(label.values())
-    plt.xlabel("y_pred")
-    plt.ylabel("y_true")
-    if save_img: plt.savefig(os.path.join(img_dir, '{}.pdf'.format(name)))
-    if display_confusion_matrix: plt.show()
 
 # ### Define the processing time measurement functions
+
+# In[8]:
+
 
 # Measure the running time of model training
 class TimeMeasurement(keras.callbacks.Callback):
@@ -251,12 +275,20 @@ class TimeMeasurement(keras.callbacks.Callback):
         if (self.start_time is None or self.stop_time is None): raise Exception("Wrong Time Measurement")
         else: return self.stop_time-self.start_time
 
+
+# In[9]:
+
+
 timer = TimeMeasurement()
+
 
 # ### Define the output sheet
 
+# In[10]:
+
+
 class output_sheet:
-    def __init__(self, columns:list=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image']):
+    def __init__(self, columns:list=['accuracy', 'loss', 'val_accuracy', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image']):
         self.output_df = pd.DataFrame(columns=columns)
         # self.output_index = list()
     def add(self, item:str, **values:dict):
@@ -271,9 +303,452 @@ class output_sheet:
         # self.apply_index()
         self.output_df.to_excel(path)
 
+
+# In[11]:
+
+
+output = output_sheet(columns=['accuracy', 'loss', 'val_accuracy', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image'])
+
+
+# # Construct CNN models
+
 # ### Model 1: a CNN model by own (baseline)
 
-def cnn_by_own(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,input_shape=INPUT_SIZE,num_class=num_class,epochs=20,patience=2, dropout_rate=0.5,verbose=0,savepath='./model_own.h5',return_model:bool=False):
+# In[12]:
+
+
+def cnn_by_own(input_shape,num_class,epochs,savepath='./model_own.h5',history=history_this,timer=timer):
+    model = Sequential()
+    model.add(Conv2D(64,(3,3),strides=(1,1),input_shape=input_shape,padding='same',activation='relu',kernel_initializer='glorot_uniform'))
+    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same',activation='relu',kernel_initializer='glorot_uniform'))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same',activation='relu',kernel_initializer='glorot_uniform'))
+    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same',activation='relu',kernel_initializer='glorot_uniform'))
+    model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(Conv2D(256,(3,3),strides=(1,1),padding='same',activation='relu',kernel_initializer='glorot_uniform'))
+    model.add(Conv2D(256,(3,3),strides=(1,1),padding='same',activation='relu',kernel_initializer='glorot_uniform'))
+    model.add(Conv2D(256,(3,3),strides=(1,1),padding='same',activation='relu',kernel_initializer='glorot_uniform'))
+    model.add(GlobalAveragePooling2D())
+    model.add(Dense(256,activation='relu'))
+    model.add(Dropout(rate=0.5))
+    model.add(Dense(num_class,activation='softmax'))
+    model.compile(loss='categorical_crossentropy',optimizer='adam',metrics=['accuracy'])
+    #train model
+    earlyStopping=kcallbacks.EarlyStopping(monitor='val_accuracy', patience=2, verbose=1, mode='auto')
+    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='auto')
+    hist=model.fit_generator(
+        train_generator,
+        steps_per_epoch=len(train_generator),
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=len(validation_generator),
+        callbacks=[history, timer, earlyStopping, saveBestModel],
+    )
+
+
+# In[13]:
+
+
+cnn_by_own(input_shape=INPUT_SIZE,num_class=num_class,epochs=20)
+history_this.loss_plot('epoch')
+history_this.loss_plot('batch')
+
+
+# Validation accuracy of a CNN by own: 99.884%
+
+# In[14]:
+
+
+output.add('model_own', train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Model 2: Xception
+
+# In[15]:
+
+
+def xception( num_class, epochs,savepath='./xception.h5',history=history_this,input_shape=INPUT_SIZE,timer=timer):
+    model_fine_tune = Xception(include_top=False, weights='imagenet', input_shape=input_shape)
+    for layer in model_fine_tune.layers[:131]:		#could be tuned to be 50, 100, or 131
+        layer.trainable = False
+    for layer in model_fine_tune.layers[131:]:
+        layer.trainable = True
+    model = GlobalAveragePooling2D()(model_fine_tune.output)
+    model=Dense(units=256,activation='relu')(model)
+    model=Dropout(0.5)(model)
+    model = Dense(num_class, activation='softmax')(model)
+    model = Model(model_fine_tune.input, model, name='xception')
+    opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
+    #train model
+    earlyStopping = kcallbacks.EarlyStopping(
+        monitor='val_accuracy', patience=3, verbose=1, mode='auto')	#patience could be tuned by 2 and 3
+    saveBestModel = kcallbacks.ModelCheckpoint(
+        filepath=savepath,
+        monitor='val_accuracy',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
+    hist = model.fit_generator(
+        train_generator,
+        steps_per_epoch=len(train_generator),
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=len(validation_generator),
+        #use_multiprocessing=True, 
+        callbacks=[history, timer, earlyStopping, saveBestModel],
+    )
+
+
+# In[16]:
+
+
+#default only 50, tf36cnn 99
+xception(num_class=num_class,epochs=20)
+history_this.loss_plot('epoch')
+history_this.loss_plot('batch')
+plt.show()
+
+
+# Validation accuracy of Xception: 100.0%
+
+# In[17]:
+
+
+output.add('Xception', train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Model 3: VGG16
+
+# In[18]:
+
+
+def vgg16( num_class, epochs,savepath='./VGG16.h5',history=history_this,input_shape=INPUT_SIZE,timer=timer):
+    model_fine_tune = VGG16(include_top=False, weights='imagenet', input_shape=input_shape)
+    for layer in model_fine_tune.layers[:15]:	#the number of frozen layers for transfer learning, have tuned from 5-18
+        layer.trainable = False
+    for layer in model_fine_tune.layers[15:]:
+        layer.trainable = True
+    model = GlobalAveragePooling2D()(model_fine_tune.output) #GlobalAveragePooling2D layer to convert the features to a single 1280-element vector per image
+    model=Dense(units=256,activation='relu')(model)
+    model=Dropout(0.5)(model)
+    model = Dense(num_class, activation='softmax')(model)
+    model = Model(model_fine_tune.input, model, name='vgg')
+    opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
+    #train model
+    earlyStopping = kcallbacks.EarlyStopping(
+        monitor='val_accuracy', patience=2, verbose=1, mode='auto')	#set early stop patience to save training time
+    saveBestModel = kcallbacks.ModelCheckpoint(
+        filepath=savepath,
+        monitor='val_accuracy',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
+    hist = model.fit_generator(
+        train_generator,
+        steps_per_epoch=len(train_generator),
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=len(validation_generator),
+        #use_multiprocessing=True, 
+        #workers=2,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
+    )
+
+
+# In[19]:
+
+
+vgg16(num_class=num_class,epochs=20)	#tf36cnn
+history_this.loss_plot('epoch')
+history_this.loss_plot('batch')
+plt.show()
+
+
+# Validation accuracy of VGG16: 100.0%
+
+# In[20]:
+
+
+output.add('VGG16', train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Model 4: VGG19
+
+# In[21]:
+
+
+def vgg19( num_class, epochs,savepath='./VGG19.h5',history=history_this,input_shape=INPUT_SIZE,timer=timer):
+    model_fine_tune = VGG19(include_top=False, weights='imagenet', input_shape=input_shape)
+    for layer in model_fine_tune.layers[:19]:	#the number of frozen layers for transfer learning, have tuned from 5-18
+        layer.trainable = False
+    for layer in model_fine_tune.layers[19:]:
+        layer.trainable = True
+    model = GlobalAveragePooling2D()(model_fine_tune.output)
+    model=Dense(units=256,activation='relu')(model)
+    model=Dropout(0.5)(model)
+    model = Dense(num_class, activation='softmax')(model)
+    model = Model(model_fine_tune.input, model, name='vgg')
+    opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
+    #train model
+    earlyStopping = kcallbacks.EarlyStopping(
+        monitor='val_accuracy', patience=2, verbose=1, mode='auto')	#set early stop patience to save training time
+    saveBestModel = kcallbacks.ModelCheckpoint(
+        filepath=savepath,
+        monitor='val_accuracy',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
+    hist = model.fit_generator(
+        train_generator,
+        steps_per_epoch=len(train_generator),
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=len(validation_generator),
+        #use_multiprocessing=True, 
+        #workers=2,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
+    )
+
+
+# In[22]:
+
+
+vgg19(num_class=num_class,epochs=20)	#binary classificaiton
+history_this.loss_plot('epoch')
+history_this.loss_plot('batch')
+plt.show()
+
+
+# Validation accuracy of VGG19: 100.0%
+
+# In[23]:
+
+
+output.add('VGG19', train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Model 5: ResNet
+
+# In[24]:
+
+
+def resnet( num_class, epochs,savepath='./resnet.h5',history=history_this,input_shape=INPUT_SIZE,timer=timer):
+    model_fine_tune = ResNet50(include_top=False, weights='imagenet', input_shape=input_shape)
+    for layer in model_fine_tune.layers[:120]:	#the number of frozen layers for transfer learning, have tuned from 50-150
+        layer.trainable = False
+    for layer in model_fine_tune.layers[120:]:	#the number of trainable layers for transfer learning
+        layer.trainable = True
+    model = GlobalAveragePooling2D()(model_fine_tune.output)
+    model=Dense(units=256,activation='relu')(model)
+    model=Dropout(0.5)(model)
+    model = Dense(num_class, activation='softmax')(model)
+    model = Model(model_fine_tune.input, model, name='resnet')
+    opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
+    #train model
+    earlyStopping = kcallbacks.EarlyStopping(
+        monitor='val_accuracy', patience=2, verbose=1, mode='auto')	#set early stop patience to save training time
+    saveBestModel = kcallbacks.ModelCheckpoint(
+        filepath=savepath,
+        monitor='val_accuracy',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
+    hist = model.fit_generator(
+        train_generator,
+        steps_per_epoch=len(train_generator),
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=len(validation_generator),
+        #use_multiprocessing=True, 
+        callbacks=[history, timer, earlyStopping, saveBestModel],
+    )
+
+
+# In[25]:
+
+
+resnet(num_class=num_class,epochs=20)	#binary classificaiton
+history_this.loss_plot('epoch')
+history_this.loss_plot('batch')
+plt.show()
+
+
+# Validation accuracy of Resnet: 98.652%
+
+# In[26]:
+
+
+output.add('Resnet', train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Model 6: Inception
+
+# In[27]:
+
+
+def inception( num_class, epochs,savepath='./inception.h5',history=history_this,input_shape=INPUT_SIZE, timer=timer):
+    model_fine_tune = InceptionV3(include_top=False, weights='imagenet', input_shape=input_shape)
+    for layer in model_fine_tune.layers[:35]:	#the number of frozen layers for transfer learning, have tuned from 50-150
+        layer.trainable = False
+    for layer in model_fine_tune.layers[35:]:	#the number of trainable layers for transfer learning
+        layer.trainable = True
+    model = GlobalAveragePooling2D()(model_fine_tune.output)
+    model=Dense(units=256,activation='relu')(model)
+    model=Dropout(0.5)(model)
+    model = Dense(num_class, activation='softmax')(model)
+    model = Model(model_fine_tune.input, model, name='resnet')
+    opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
+    #train model
+    earlyStopping = kcallbacks.EarlyStopping(
+        monitor='val_accuracy', patience=2, verbose=1, mode='auto')	#set early stop patience to save training time
+    saveBestModel = kcallbacks.ModelCheckpoint(
+        filepath=savepath,
+        monitor='val_accuracy',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
+    hist = model.fit_generator(
+        train_generator,
+        steps_per_epoch=len(train_generator),
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=len(validation_generator),
+        #use_multiprocessing=True, 
+        callbacks=[history, timer, earlyStopping, saveBestModel],
+    )
+
+
+# In[28]:
+
+
+inception(num_class=num_class,epochs=20)	#binary classificaiton
+history_this.loss_plot('epoch')
+history_this.loss_plot('batch')
+plt.show()
+
+
+# Validation accuracy of Inception: 100.0%
+
+# In[29]:
+
+
+output.add('Inception', train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Model 7: InceptionResnet
+
+# In[30]:
+
+
+def inceptionresnet( num_class, epochs,savepath='./inceptionresnet.h5',history=history_this,input_shape=INPUT_SIZE, timer=timer):
+    model_fine_tune = InceptionResNetV2(include_top=False, weights='imagenet', input_shape=input_shape)
+    for layer in model_fine_tune.layers[:500]:	#the number of frozen layers for transfer learning, have tuned from 400-550
+        layer.trainable = False
+    for layer in model_fine_tune.layers[500:]:	#the number of trainable layers for transfer learning
+        layer.trainable = True
+    model = GlobalAveragePooling2D()(model_fine_tune.output)
+    model=Dense(units=256,activation='relu')(model)
+    model=Dropout(0.5)(model)
+    model = Dense(num_class, activation='softmax')(model)
+    model = Model(model_fine_tune.input, model, name='resnet')
+    opt = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)	#tuned learning rate to be 0.001
+    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
+    #train model
+    earlyStopping = kcallbacks.EarlyStopping(
+        monitor='val_accuracy', patience=2, verbose=1, mode='auto')	#set early stop patience to save training time
+    saveBestModel = kcallbacks.ModelCheckpoint(
+        filepath=savepath,
+        monitor='val_accuracy',
+        verbose=1,
+        save_best_only=True,
+        mode='auto')
+    hist = model.fit_generator(
+        train_generator,
+        steps_per_epoch=len(train_generator),
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=len(validation_generator),
+        #use_multiprocessing=True, 
+        callbacks=[history, timer, earlyStopping, saveBestModel],
+    )
+
+
+# In[31]:
+
+
+inceptionresnet(num_class=num_class,epochs=20)	# 5-class classificaiton
+history_this.loss_plot('epoch')
+history_this.loss_plot('batch')
+plt.show()
+
+
+# Validation accuracy of InceptionResnet: 99.993%
+
+# In[32]:
+
+
+output.add('InceptionResnet', train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# # Hyperparameter Optimization 
+# Use VGG16 as an example.  
+# 
+# Tuned hyperparameters of CNN: 
+# 1. The number of frozen layers
+# 2. The number of epochs
+# 3. Early stop patience
+# 4. Learning rate
+# 5. Dropout rate
+# 
+# Hyperparameter optimization methods:
+# 1. Random search
+# 2. Bayesian optimization - Tree Parzen Estimator(BO-TPE)
+
+# In[14]:
+
+
+def prediction(model, test_labels=test_labels, test_images=test_images, label=label):
+#read images from validation folder
+    # test_labels = []
+    # test_images=[]
+    # for subdir, dirs, files in os.walk(rootdir):
+    #     for file in files:
+    #         if not (file.endswith(".jpeg"))|(file.endswith(".jpg"))|(file.endswith(".png")):
+    #             continue
+    #         test_labels.append(subdir.split('/')[-1])
+    #         test_images.append(os.path.join(subdir, file))
+
+    # label=validation_generator.class_indices
+    # label={v: k for k, v in label.items()}
+    # predict=[]
+    # length=len(test_images)
+    # for i in range(length):
+    #     inputimg=test_images[i]
+    #     test_batch=[]
+    #     thisimg=np.array(Image.open(inputimg))/255 #read all the images in validation set
+    #     #print(thisimg)
+    #     test_shape=(1,)+thisimg.shape
+    #     thisimg=thisimg.reshape(test_shape)
+    #     model_batch=model.predict(thisimg) #use master model to process the input image
+    #     #generate result by model 1
+    #     prob=model_batch[0,np.argmax(model_batch,axis=1)[0]]
+    #     res=label[np.argmax(model_batch,axis=1)[0]]
+    #     predict.append(res)
+    acc=accuracy_score(test_labels, get_prediction(model=model, test_images=test_images, label=label))
+    return acc
+
+
+# ## Model by Own
+
+# In[ ]:
+
+
+def cnn_by_own(num_class,input_shape=INPUT_SIZE,epochs=20,patience=2, dropout_rate=0.5,verbose=0,savepath='./model_own.h5',history=history_this,timer=timer):
     model = Sequential()
     model.add(Conv2D(64,(3,3),strides=(1,1),input_shape=input_shape,padding='same',activation='relu',kernel_initializer='glorot_uniform'))
     model.add(Conv2D(64,(3,3),strides=(1,1),padding='same',activation='relu',kernel_initializer='glorot_uniform'))
@@ -290,27 +765,139 @@ def cnn_by_own(train_generator=train_generator,validation_generator=validation_g
     model.add(Dense(num_class,activation='softmax'))
     model.compile(loss='categorical_crossentropy',optimizer='adam',metrics=['accuracy'])
     #train model
-    earlyStopping=kcallbacks.EarlyStopping(monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)
-    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_acc', verbose=verbose, save_best_only=True, mode='auto')
-    callbacks=[history,timer,earlyStopping,saveBestModel]
+    earlyStopping=kcallbacks.EarlyStopping(monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)
+    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_accuracy', verbose=verbose, save_best_only=True, mode='auto')
     hist=model.fit_generator(
         train_generator,
         steps_per_epoch=len(train_generator),
         epochs=epochs,
         validation_data=validation_generator,
         validation_steps=len(validation_generator),
-        callbacks=callbacks,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
         verbose=verbose
     )
-    # return model cannot be directly used with multi-processing
-    if return_model: 
-        return model
-    else: 
-        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
+    return model
 
-# ### Model 2: Xception
 
-def xception(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=131,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./xception.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+# In[ ]:
+
+
+#define the objective function to be optimized
+import time
+from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+import matplotlib.pyplot as plt
+import statistics 
+
+def objective(params, num_class=num_class, history=history_hpo):
+    
+    params = {
+        'epochs': int(params['epochs']),
+        'patience': int(params['patience']),
+        'dropout_rate': abs(float(params['dropout_rate'])),
+    }
+    # frozen=params['frozen']
+    # epochs=params['epochs']
+    # patience=params['patience']
+    # lr=params['lr']
+    # dropout_rate=params['dropout_rate']
+
+    # vgg16(num_class=num_class, frozen=frozen,epochs=epochs,patience=patience, lr=lr, dropout_rate=dropout_rate)
+
+    model = cnn_by_own(num_class=num_class, history=history, **params)
+
+    acc=prediction(model=model)
+
+    print('accuracy:%s'%acc)
+    return {'loss': -acc, 'status': STATUS_OK }
+    
+
+
+# ### BO-TPE
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
+space = {
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+cnn_by_own(input_shape=INPUT_SIZE, num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('model_own (BO-TPE)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Random Search
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Random search
+space = {
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=rand.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+cnn_by_own(input_shape=INPUT_SIZE, num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('model_own (Random Search)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ## Xception
+
+# In[ ]:
+
+
+def xception( num_class,epochs=20,frozen=15,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./xception.h5',history=history_this,input_shape=INPUT_SIZE,timer=timer):
     model_fine_tune = Xception(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:		#could be tuned to be 50, 100, or 131
         layer.trainable = False
@@ -325,14 +912,13 @@ def xception(train_generator=train_generator,validation_generator=validation_gen
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#patience could be tuned by 2 and 3
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#patience could be tuned by 2 and 3
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
-    callbacks=[history,timer,earlyStopping,saveBestModel]
     hist = model.fit_generator(
         train_generator,
         steps_per_epoch=len(train_generator),
@@ -341,17 +927,142 @@ def xception(train_generator=train_generator,validation_generator=validation_gen
         validation_steps=len(validation_generator),
         #use_multiprocessing=True, 
         verbose=verbose,
-        callbacks=callbacks,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
     )
-    # return model cannot be directly used with multi-processing
-    if return_model: 
-        return model
-    else: 
-        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
+    return model
 
-# ### Model 3: VGG16
 
-def vgg16(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=15,lr=0.001,patience=2, dropout_rate=0.5,verbose=0, savepath='./VGG16.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+# In[ ]:
+
+
+#define the objective function to be optimized
+import time
+from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+import matplotlib.pyplot as plt
+import statistics 
+
+def objective(params, num_class=num_class, history=history_hpo):
+    
+    params = {
+        'frozen': int(params['frozen']),
+        'epochs': int(params['epochs']),
+        'patience': int(params['patience']),
+        'lr': abs(float(params['lr'])),
+        'dropout_rate': abs(float(params['dropout_rate'])),
+    }
+    # frozen=params['frozen']
+    # epochs=params['epochs']
+    # patience=params['patience']
+    # lr=params['lr']
+    # dropout_rate=params['dropout_rate']
+
+    # vgg16(num_class=num_class, frozen=frozen,epochs=epochs,patience=patience, lr=lr, dropout_rate=dropout_rate)
+
+    model = xception(num_class=num_class, history=history, **params)
+
+    acc=prediction(model=model)
+
+    print('accuracy:%s'%acc)
+    return {'loss': -acc, 'status': STATUS_OK }
+    
+
+
+# ### BO-TPE
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
+available_frozen = [50, 100, 131]
+space = {
+    'frozen': hp.choice('frozen', available_frozen),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': available_frozen[int(best['frozen'])],
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+xception(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('Xception (BO-TPE)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Random Search
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Random search
+available_frozen = [50, 100, 131]
+space = {
+    'frozen': hp.choice('frozen', available_frozen),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=rand.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': available_frozen[int(best['frozen'])],
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+xception(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('Xception (Random Search)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ## VGG16
+
+# In[ ]:
+
+
+def vgg16(num_class,epochs=20,frozen=15,lr=0.001,patience=2, dropout_rate=0.5,verbose=0, savepath='./VGG16.h5',history=history_this,timer=timer,input_shape=INPUT_SIZE):
     model_fine_tune = VGG16(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 5-18
         layer.trainable = False
@@ -366,14 +1077,13 @@ def vgg16(train_generator=train_generator,validation_generator=validation_genera
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
-    callbacks=[history,timer,earlyStopping,saveBestModel]
     hist = model.fit_generator(
         train_generator,
         steps_per_epoch=len(train_generator),
@@ -382,18 +1092,141 @@ def vgg16(train_generator=train_generator,validation_generator=validation_genera
         validation_steps=len(validation_generator),
         #use_multiprocessing=True, 
         #workers=2,
-        callbacks=callbacks,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
         verbose = verbose
     )
-    # return model cannot be directly used with multi-processing
-    if return_model: 
-        return model
-    else: 
-        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
+    return model
 
-# ### Model 4: VGG19
 
-def vgg19(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class,epochs=20,frozen=19,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./VGG19.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+# In[ ]:
+
+
+#define the objective function to be optimized
+import time
+from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+import matplotlib.pyplot as plt
+import statistics 
+
+def objective(params, num_class=num_class, history=history_hpo):
+    
+    params = {
+        'frozen': int(params['frozen']),
+        'epochs': int(params['epochs']),
+        'patience': int(params['patience']),
+        'lr': abs(float(params['lr'])),
+        'dropout_rate': abs(float(params['dropout_rate'])),
+    }
+    # frozen=params['frozen']
+    # epochs=params['epochs']
+    # patience=params['patience']
+    # lr=params['lr']
+    # dropout_rate=params['dropout_rate']
+
+    # vgg16(num_class=num_class, frozen=frozen,epochs=epochs,patience=patience, lr=lr, dropout_rate=dropout_rate)
+
+    model = vgg16(num_class=num_class, history=history, **params)
+
+    acc=prediction(model=model)
+
+    print('accuracy:%s'%acc)
+    return {'loss': -acc, 'status': STATUS_OK }
+    
+
+
+# ### BO-TPE
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
+space = {
+    'frozen': hp.quniform('frozen', 15, 18, 1),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+vgg16(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('VGG16 (BO-TPE)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Random Search
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Random search
+space = {
+    'frozen': hp.quniform('frozen', 15, 18, 1),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=rand.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+vgg16(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('VGG16 (Random Search)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ## VGG19
+
+# In[ ]:
+
+
+def vgg19( num_class,epochs=20,frozen=15,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./VGG19.h5',history=history_this,input_shape=INPUT_SIZE,timer=timer):
     model_fine_tune = VGG19(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 5-18
         layer.trainable = False
@@ -408,14 +1241,13 @@ def vgg19(train_generator=train_generator,validation_generator=validation_genera
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])	#set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
-    callbacks=[history,timer,earlyStopping,saveBestModel]
     hist = model.fit_generator(
         train_generator,
         steps_per_epoch=len(train_generator),
@@ -425,17 +1257,140 @@ def vgg19(train_generator=train_generator,validation_generator=validation_genera
         verbose=verbose,
         #use_multiprocessing=True, 
         #workers=2,
-        callbacks=callbacks,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
     )
-    # return model cannot be directly used with multi-processing
-    if return_model: 
-        return model
-    else: 
-        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
+    return model
 
-# ### Model 5: ResNet
 
-def resnet(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=120,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./resnet.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+# In[ ]:
+
+
+#define the objective function to be optimized
+import time
+from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+import matplotlib.pyplot as plt
+import statistics 
+
+def objective(params, num_class=num_class, history=history_hpo):
+    
+    params = {
+        'frozen': int(params['frozen']),
+        'epochs': int(params['epochs']),
+        'patience': int(params['patience']),
+        'lr': abs(float(params['lr'])),
+        'dropout_rate': abs(float(params['dropout_rate'])),
+    }
+    # frozen=params['frozen']
+    # epochs=params['epochs']
+    # patience=params['patience']
+    # lr=params['lr']
+    # dropout_rate=params['dropout_rate']
+
+    # vgg16(num_class=num_class, frozen=frozen,epochs=epochs,patience=patience, lr=lr, dropout_rate=dropout_rate)
+
+    model = vgg19(num_class=num_class, history=history, **params)
+
+    acc=prediction(model=model)
+
+    print('accuracy:%s'%acc)
+    return {'loss': -acc, 'status': STATUS_OK }
+    
+
+
+# ### BO-TPE
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
+space = {
+    'frozen': hp.quniform('frozen', 15, 18, 1),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+vgg19(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('VGG19 (BO-TPE)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Random Search
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Random search
+space = {
+    'frozen': hp.quniform('frozen', 15, 18, 1),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=rand.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+vgg19(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('VGG19 (Random Search)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ## ResNet
+
+# In[ ]:
+
+
+def resnet( num_class, epochs=20,frozen=120,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./resnet.h5',history=history_this,input_shape=INPUT_SIZE,timer=timer):
     model_fine_tune = ResNet50(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 50-150
         layer.trainable = False
@@ -450,14 +1405,13 @@ def resnet(train_generator=train_generator,validation_generator=validation_gener
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
-    callbacks=[history,timer,earlyStopping,saveBestModel]
     hist = model.fit_generator(
         train_generator,
         steps_per_epoch=len(train_generator),
@@ -466,17 +1420,140 @@ def resnet(train_generator=train_generator,validation_generator=validation_gener
         validation_steps=len(validation_generator),
         #use_multiprocessing=True, 
         verbose=verbose,
-        callbacks=callbacks,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
     )
-    # return model cannot be directly used with multi-processing
-    if return_model: 
-        return model
-    else: 
-        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
+    return model
 
-# ### Model 6: Inception
 
-def inception(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=35,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inception.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+# In[ ]:
+
+
+#define the objective function to be optimized
+import time
+from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+import matplotlib.pyplot as plt
+import statistics 
+
+def objective(params, num_class=num_class, history=history_hpo):
+    
+    params = {
+        'frozen': int(params['frozen']),
+        'epochs': int(params['epochs']),
+        'patience': int(params['patience']),
+        'lr': abs(float(params['lr'])),
+        'dropout_rate': abs(float(params['dropout_rate'])),
+    }
+    # frozen=params['frozen']
+    # epochs=params['epochs']
+    # patience=params['patience']
+    # lr=params['lr']
+    # dropout_rate=params['dropout_rate']
+
+    # vgg16(num_class=num_class, frozen=frozen,epochs=epochs,patience=patience, lr=lr, dropout_rate=dropout_rate)
+
+    model = resnet(num_class=num_class, history=history, **params)
+
+    acc=prediction(model=model)
+
+    print('accuracy:%s'%acc)
+    return {'loss': -acc, 'status': STATUS_OK }
+    
+
+
+# ### BO-TPE
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
+space = {
+    'frozen': hp.quniform('frozen', 50, 150, 10),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+resnet(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('ResNet (BO-TPE)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Random Search
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Random search
+space = {
+    'frozen': hp.quniform('frozen', 50, 150, 10),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=rand.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+resnet(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('ResNet (Random Search)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ## Inception
+
+# In[ ]:
+
+
+def inception( num_class, epochs=20,frozen=120,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inception.h5',history=history_this,input_shape=INPUT_SIZE, timer=timer):
     model_fine_tune = InceptionV3(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 50-150
         layer.trainable = False
@@ -491,14 +1568,13 @@ def inception(train_generator=train_generator,validation_generator=validation_ge
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
-    callbacks=[history,timer,earlyStopping,saveBestModel]
     hist = model.fit_generator(
         train_generator,
         steps_per_epoch=len(train_generator),
@@ -507,17 +1583,140 @@ def inception(train_generator=train_generator,validation_generator=validation_ge
         validation_steps=len(validation_generator),
         #use_multiprocessing=True, 
         verbose=verbose,
-        callbacks=callbacks,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
     )
-    # return model cannot be directly used with multi-processing
-    if return_model: 
-        return model
-    else: 
-        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
+    return model
 
-# ### Model 7: InceptionResnet
 
-def inceptionresnet(train_generator=train_generator,validation_generator=validation_generator,history:LossHistory=history_this,timer:TimeMeasurement=timer,num_class=num_class, epochs=20,frozen=500,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inceptionresnet.h5',input_shape=INPUT_SIZE,return_model:bool=False):
+# In[ ]:
+
+
+#define the objective function to be optimized
+import time
+from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+import matplotlib.pyplot as plt
+import statistics 
+
+def objective(params, num_class=num_class, history=history_hpo):
+    
+    params = {
+        'frozen': int(params['frozen']),
+        'epochs': int(params['epochs']),
+        'patience': int(params['patience']),
+        'lr': abs(float(params['lr'])),
+        'dropout_rate': abs(float(params['dropout_rate'])),
+    }
+    # frozen=params['frozen']
+    # epochs=params['epochs']
+    # patience=params['patience']
+    # lr=params['lr']
+    # dropout_rate=params['dropout_rate']
+
+    # vgg16(num_class=num_class, frozen=frozen,epochs=epochs,patience=patience, lr=lr, dropout_rate=dropout_rate)
+
+    model = inception(num_class=num_class, history=history, **params)
+
+    acc=prediction(model=model)
+
+    print('accuracy:%s'%acc)
+    return {'loss': -acc, 'status': STATUS_OK }
+    
+
+
+# ### BO-TPE
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
+space = {
+    'frozen': hp.quniform('frozen', 50, 150, 10),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+inception(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('Inception (BO-TPE)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ### Random Search
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Random search
+space = {
+    'frozen': hp.quniform('frozen', 50, 150, 10),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=rand.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
+    }
+inception(num_class=num_class, verbose=1, **params)
+
+
+# In[ ]:
+
+
+output.add('Inception (Random Search)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
+
+
+# ## InceptionResnet
+
+# In[ ]:
+
+
+def inceptionresnet( num_class, epochs=20,frozen=120,lr=0.001,patience=2, dropout_rate=0.5,verbose=0,savepath='./inceptionresnet.h5',history=history_this,input_shape=INPUT_SIZE, timer=timer):
     model_fine_tune = InceptionResNetV2(include_top=False, weights='imagenet', input_shape=input_shape)
     for layer in model_fine_tune.layers[:frozen]:	#the number of frozen layers for transfer learning, have tuned from 400-550
         layer.trainable = False
@@ -532,14 +1731,13 @@ def inceptionresnet(train_generator=train_generator,validation_generator=validat
     model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy']) #set the loss function to be binary crossentropy
     #train model
     earlyStopping = kcallbacks.EarlyStopping(
-        monitor='val_acc', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
+        monitor='val_accuracy', patience=patience, verbose=verbose, mode='auto', restore_best_weights=True)	#set early stop patience to save training time
     saveBestModel = kcallbacks.ModelCheckpoint(
         filepath=savepath,
-        monitor='val_acc',
+        monitor='val_accuracy',
         verbose=verbose,
         save_best_only=True,
         mode='auto')
-    callbacks=[history,timer,earlyStopping,saveBestModel]
     hist = model.fit_generator(
         train_generator,
         steps_per_epoch=len(train_generator),
@@ -548,65 +1746,21 @@ def inceptionresnet(train_generator=train_generator,validation_generator=validat
         validation_steps=len(validation_generator),
         #use_multiprocessing=True, 
         verbose=verbose,
-        callbacks=callbacks,
+        callbacks=[history, timer, earlyStopping, saveBestModel],
     )
-    # return model cannot be directly used with multi-processing
-    if return_model: 
-        return model
-    else: 
-        return (history.get_best(), timer.get_processing_time(), history.get_prediction())
+    return model
 
-# # Hyperparameter Optimization 
-# 
-# Hyperparameter optimization methods:
-# 1. Random search
-# 2. Bayesian optimization - Tree Parzen Estimator(BO-TPE)
 
-def prediction(model, test_labels=test_labels, test_images=test_images, label=label):
-    acc=accuracy_score(test_labels, get_prediction(model=model, test_images=test_images, label=label))
-    return acc
+# In[ ]:
 
-# Multiprocessing helper method
-# This is aimed to solved the OOM issue
-
-def run_with_multiprocessing(func, **kwds):
-    pool = multiprocessing.Pool(processes=1)
-    result = pool.apply_async(func=func, kwds=kwds)
-    pool.close()
-    pool.join()
-    return result.get()
-
-# The helper method to help the use of multiprocessing in objective methods
-
-def train_and_predict(train_func, num_class=num_class, train_generator=train_generator, validation_generator=validation_generator, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label, **params):
-    model = train_func(return_model=True, train_generator=train_generator, validation_generator=validation_generator, num_class=num_class, history=history, **params)
-    return prediction(model=model, test_labels=test_labels, test_images=test_images, label=label)
 
 #define the objective function to be optimized
+import time
+from hyperopt import hp, fmin, tpe, rand, STATUS_OK, Trials
+import matplotlib.pyplot as plt
+import statistics 
 
-# ## Model by Own
-
-def objective_model_own(params, num_class=num_class, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label):
-    
-    params = {
-        'epochs': int(params['epochs']),
-        'patience': int(params['patience']),
-        'dropout_rate': abs(float(params['dropout_rate'])),
-    }
-
-    acc=run_with_multiprocessing(
-        func=train_and_predict,
-        train_func=cnn_by_own,
-        num_class=num_class, history=history, test_labels=test_labels, test_images=test_images, label=label, **params)
-
-    print('accuracy:%s'%acc)
-    return {'loss': -acc, 'status': STATUS_OK }
-
-# ## Xception
-
-#define the objective function to be optimized
-
-def objective_xception(params, num_class=num_class, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label):
+def objective(params, num_class=num_class, history=history_hpo):
     
     params = {
         'frozen': int(params['frozen']),
@@ -615,671 +1769,145 @@ def objective_xception(params, num_class=num_class, history=history_hpo, test_la
         'lr': abs(float(params['lr'])),
         'dropout_rate': abs(float(params['dropout_rate'])),
     }
+    # frozen=params['frozen']
+    # epochs=params['epochs']
+    # patience=params['patience']
+    # lr=params['lr']
+    # dropout_rate=params['dropout_rate']
 
-    acc=run_with_multiprocessing(
-        func=train_and_predict,
-        train_func=xception,
-        num_class=num_class, history=history, test_labels=test_labels, test_images=test_images, label=label, **params)
+    # vgg16(num_class=num_class, frozen=frozen,epochs=epochs,patience=patience, lr=lr, dropout_rate=dropout_rate)
+
+    model = inceptionresnet(num_class=num_class, history=history, **params)
+
+    acc=prediction(model=model)
 
     print('accuracy:%s'%acc)
     return {'loss': -acc, 'status': STATUS_OK }
-
-# ## VGG16
-
-#define the objective function to be optimized
-
-def objective_vgg16(params, num_class=num_class, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label):
     
-    params = {
-        'frozen': int(params['frozen']),
-        'epochs': int(params['epochs']),
-        'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
-        'dropout_rate': abs(float(params['dropout_rate'])),
+
+
+# ### BO-TPE
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
+space = {
+    'frozen': hp.quniform('frozen', 400, 500, 10),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=tpe.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
     }
+inceptionresnet(num_class=num_class, verbose=1, **params)
 
-    acc=run_with_multiprocessing(
-        func=train_and_predict,
-        train_func=vgg16,
-        num_class=num_class, history=history, test_labels=test_labels, test_images=test_images, label=label, **params)
 
-    print('accuracy:%s'%acc)
-    return {'loss': -acc, 'status': STATUS_OK }
+# In[ ]:
 
-# ## VGG19
 
-#define the objective function to be optimized
+output.add('InceptionResnet (BO-TPE)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
 
-def objective_vgg19(params, num_class=num_class, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label):
-    
-    params = {
-        'frozen': int(params['frozen']),
-        'epochs': int(params['epochs']),
-        'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
-        'dropout_rate': abs(float(params['dropout_rate'])),
+
+# ### Random Search
+
+# In[ ]:
+
+
+#Hyperparameter optimization by Random search
+space = {
+    'frozen': hp.quniform('frozen', 400, 500, 10),
+    'epochs': hp.quniform('epochs', 5, 21, 5),
+    'patience': hp.quniform('patience', 2, 4, 1),
+    'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
+    'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
+}
+
+t1=time.time()
+best = fmin(fn=objective,
+            space=space,
+            algo=rand.suggest,
+            max_evals=10)
+print("Hyperopt estimated optimum {}".format(best))
+t2=time.time()
+print("Time: "+str(t2-t1))
+
+
+# In[ ]:
+
+
+# Retrain the model by using the best hyperparameter values to obtain the best model
+params = {
+        'frozen': int(best['frozen']),
+        'epochs': int(best['epochs']),
+        'patience': int(best['patience']),
+        'lr': abs(float(best['lr'])),
+        'dropout_rate': abs(float(best['dropout_rate'])),
     }
+inceptionresnet(num_class=num_class, verbose=1, **params)
 
-    acc=run_with_multiprocessing(
-        func=train_and_predict,
-        train_func=vgg19,
-        num_class=num_class, history=history, test_labels=test_labels, test_images=test_images, label=label, **params)
 
-    print('accuracy:%s'%acc)
-    return {'loss': -acc, 'status': STATUS_OK }
+# In[ ]:
 
-# ## ResNet
 
-#define the objective function to be optimized
+output.add('InceptionResnet (Random Search)', hpo_time=t2-t1, train_time=timer.get_processing_time(), **history_this.get_best())
 
-def objective_resnet(params, num_class=num_class, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label):
-    
-    params = {
-        'frozen': int(params['frozen']),
-        'epochs': int(params['epochs']),
-        'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
-        'dropout_rate': abs(float(params['dropout_rate'])),
-    }
 
-    acc=run_with_multiprocessing(
-        func=train_and_predict,
-        train_func=resnet,
-        num_class=num_class, history=history, test_labels=test_labels, test_images=test_images, label=label, **params)
+# # Save Result
 
-    print('accuracy:%s'%acc)
-    return {'loss': -acc, 'status': STATUS_OK }
+# In[33]:
 
-# ## Inception
 
-#define the objective function to be optimized
+output.to_excel()
 
-def objective_inception(params, num_class=num_class, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label):
-    
-    params = {
-        'frozen': int(params['frozen']),
-        'epochs': int(params['epochs']),
-        'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
-        'dropout_rate': abs(float(params['dropout_rate'])),
-    }
 
-    acc=run_with_multiprocessing(
-        func=train_and_predict,
-        train_func=inception,
-        num_class=num_class, history=history, test_labels=test_labels, test_images=test_images, label=label, **params)
+# In[ ]:
 
-    print('accuracy:%s'%acc)
-    return {'loss': -acc, 'status': STATUS_OK }
 
-# ## InceptionResnet
+# # Online GPU renting platform specification
+# # WeChat Message
+# import requests
+# resp = requests.get(
+#     "https://www.autodl.com/api/v1/wechat/message/push?token={token}&title={title}&name={name}&content={content}".format(
+#         token="",
+#         title="From AutoDL",
+#         name="UNSW-NB15 CNN",
+#         content="Training Complete")
+# )
+# print(resp.content.decode())
+# # Shutdown
+# !shutdown
 
-#define the objective function to be optimized
 
-def objective_inceptionresnet(params, num_class=num_class, history=history_hpo, test_labels=test_labels, test_images=test_images, label=label):
-    
-    params = {
-        'frozen': int(params['frozen']),
-        'epochs': int(params['epochs']),
-        'patience': int(params['patience']),
-        'lr': abs(float(params['lr'])),
-        'dropout_rate': abs(float(params['dropout_rate'])),
-    }
+# In[ ]:
 
-    acc=run_with_multiprocessing(
-        func=train_and_predict,
-        train_func=inceptionresnet,
-        num_class=num_class, history=history, test_labels=test_labels, test_images=test_images, label=label, **params)
 
-    print('accuracy:%s'%acc)
-    return {'loss': -acc, 'status': STATUS_OK }
 
-if __name__ == '__main__':
 
-    starting_time = time.time()
 
-    # Prepare output_sheet
-    output = output_sheet(columns=['accuracy', 'loss', 'val_acc', 'val_loss', 'precision', 'recall', 'f1-score', 'hpo_time', 'train_time', 'predict_time_per_image'])
+# In[ ]:
 
-    # # Construct CNN models
 
-    # ### Model 1: a CNN model by own (baseline)
-
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # cnn_by_own(input_shape=INPUT_SIZE,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # history_this.loss_plot('epoch')
-    # history_this.loss_plot('batch')
-    # plt.show()
-
-    output.add('model_own', train_time=processing_time, **best_result)
-    generate_report('model_own_original', y_pred=y_pred)
-
-    # ### Model 2: Xception
-
-    #default only 50, tf36cnn 99
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=xception,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # xception(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # history_this.loss_plot('epoch')
-    # history_this.loss_plot('batch')
-    # plt.show()
-
-    output.add('Xception', train_time=processing_time, **best_result)
-    generate_report('Xception_original', y_pred=y_pred)
-
-    # ### Model 3: VGG16
-
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # vgg16(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#tf36cnn
-    # history_this.loss_plot('epoch')
-    # history_this.loss_plot('batch')
-    # plt.show()
-
-    output.add('VGG16', train_time=processing_time, **best_result)
-    generate_report('VGG16_original', y_pred=y_pred)
-
-    # ### Model 4: VGG19
-
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # vgg19(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#binary classificaiton
-    # history_this.loss_plot('epoch')
-    # history_this.loss_plot('batch')
-    # plt.show()
-
-    output.add('VGG19', train_time=processing_time, **best_result)
-    generate_report('VGG19_original', y_pred=y_pred)
-
-    # ### Model 5: ResNet
-
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # resnet(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#binary classificaiton
-    # history_this.loss_plot('epoch')
-    # history_this.loss_plot('batch')
-    # plt.show()
-
-    output.add('Resnet', train_time=processing_time, **best_result)
-    generate_report('ResNet_original', y_pred=y_pred)
-
-    # ### Model 6: Inception
-
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=inception,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # inception(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	#binary classificaiton
-    # history_this.loss_plot('epoch')
-    # history_this.loss_plot('batch')
-    # plt.show()
-
-    output.add('Inception', train_time=processing_time, **best_result)
-    generate_report('Inception_original', y_pred=y_pred)
-
-    # ### Model 7: InceptionResnet
-
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet,num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)
-    # inceptionresnet(num_class=num_class,epochs=20,verbose=1,history=history_this,timer=timer)	# 5-class classificaiton
-    # history_this.loss_plot('epoch')
-    # history_this.loss_plot('batch')
-    # plt.show()
-
-    output.add('InceptionResnet', train_time=processing_time, **best_result)
-    generate_report('InceptionResnet_original', y_pred=y_pred)
-
-    # # Hyperparameter Optimization 
-
-    # ## Model by Own
-
-    # ### BO-TPE
-
-    #Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
-    space = {
-        'epochs': hp.quniform('epochs', 5, 21, 5),
-        'patience': hp.quniform('patience', 2, 4, 1),
-        'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
-    }
-
-    t1=time.time()
-    best = fmin(fn=objective_model_own,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # cnn_by_own(input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('model_own (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('model_own_BO-TPE', y_pred=y_pred)
-
-    # ### Random Search
-
-    t1=time.time()
-    best = fmin(fn=objective_model_own,
-                space=space,
-                algo=rand.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=cnn_by_own, input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # cnn_by_own(input_shape=INPUT_SIZE, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('model_own (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('model_own_Random_Search', y_pred=y_pred)
-
-    # ## Xception
-
-    # ### BO-TPE
-
-    #Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
-    available_frozen = [50, 100, 131]
-    space = {
-        'frozen': hp.choice('frozen', available_frozen),
-        'epochs': hp.quniform('epochs', 5, 21, 5),
-        'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
-        'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
-    }
-
-    t1=time.time()
-    best = fmin(fn=objective_xception,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': available_frozen[int(best['frozen'])],
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # xception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('Xception (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('Xception_BO-TPE', y_pred=y_pred)
-
-    #Hyperparameter optimization by Random search
-    t1=time.time()
-    best = fmin(fn=objective_xception,
-                space=space,
-                algo=rand.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': available_frozen[int(best['frozen'])],
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=xception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # xception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('Xception (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('Xception_Random_Search', y_pred=y_pred)
-
-    # ## VGG16
-
-    # ### BO-TPE
-
-    #Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
-    space = {
-        'frozen': hp.quniform('frozen', 15, 18, 1),
-        'epochs': hp.quniform('epochs', 5, 21, 5),
-        'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
-        'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
-    }
-
-    t1=time.time()
-    best = fmin(fn=objective_vgg16,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # vgg16(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('VGG16 (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('VGG16_BO-TPE', y_pred=y_pred)
-
-    # ### Random Search
-
-    #Hyperparameter optimization by Random search
-    t1=time.time()
-    best = fmin(fn=objective_vgg16,
-                space=space,
-                algo=rand.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg16, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # vgg16(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('VGG16 (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('VGG16_Random_Search', y_pred=y_pred)
-
-    # ## VGG19
-
-    #Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
-    space = {
-        'frozen': hp.quniform('frozen', 15, 18, 1),
-        'epochs': hp.quniform('epochs', 5, 21, 5),
-        'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
-        'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
-    }
-
-    t1=time.time()
-    best = fmin(fn=objective_vgg19,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # vgg19(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('VGG19 (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('VGG19_BO-TPE', y_pred=y_pred)
-
-    # ### Random Search
-
-    #Hyperparameter optimization by Random search
-
-    t1=time.time()
-    best = fmin(fn=objective_vgg19,
-                space=space,
-                algo=rand.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=vgg19, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # vgg19(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('VGG19 (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('VGG19_Random_Search', y_pred=y_pred)
-
-    # ## ResNet
-
-    # ### BO-TPE
-
-    #Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
-    space = {
-        'frozen': hp.quniform('frozen', 50, 150, 10),
-        'epochs': hp.quniform('epochs', 5, 21, 5),
-        'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
-        'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
-    }
-
-    t1=time.time()
-    best = fmin(fn=objective_resnet,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # resnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('ResNet (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('ResNet_BO-TPE', y_pred=y_pred)
-
-    # ### Random Search
-
-    #Hyperparameter optimization by Random search
-
-    t1=time.time()
-    best = fmin(fn=objective_resnet,
-                space=space,
-                algo=rand.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=resnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # resnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('ResNet (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('ResNet_Random_Search', y_pred=y_pred)
-
-    # ## Inception
-
-    # ### BO-TPE
-
-    #Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
-    space = {
-        'frozen': hp.quniform('frozen', 50, 150, 10),
-        'epochs': hp.quniform('epochs', 5, 21, 5),
-        'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
-        'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
-    }
-
-    t1=time.time()
-    best = fmin(fn=objective_inception,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # inception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('Inception (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('Inception_BO-TPE', y_pred=y_pred)
-
-    # ### Random Search
-
-    #Hyperparameter optimization by Random search
-
-    t1=time.time()
-    best = fmin(fn=objective_inception,
-                space=space,
-                algo=rand.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=inception, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # inception(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('Inception (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('Inception_Random_Search', y_pred=y_pred)
-
-    # ## InceptionResnet
-
-    # ### BO-TPE
-
-    #Hyperparameter optimization by Bayesian optimization - Tree Parzen Estimator
-    space = {
-        'frozen': hp.quniform('frozen', 400, 500, 10),
-        'epochs': hp.quniform('epochs', 5, 21, 5),
-        'patience': hp.quniform('patience', 2, 4, 1),
-        'lr': hp.quniform('lr', 0.001, 0.006, 0.001),
-        'dropout_rate': hp.quniform('dropout_rate', 0.3, 0.6, 0.1),
-    }
-
-    t1=time.time()
-    best = fmin(fn=objective_inceptionresnet,
-                space=space,
-                algo=tpe.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # inceptionresnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('InceptionResnet (BO-TPE)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('InceptionResnet_BO-TPE', y_pred=y_pred)
-
-    # ### Random Search
-
-    #Hyperparameter optimization by Random search
-
-    t1=time.time()
-    best = fmin(fn=objective_inceptionresnet,
-                space=space,
-                algo=rand.suggest,
-                max_evals=10)
-
-    print("Hyperopt estimated optimum {}".format(best))
-    t2=time.time()
-    print("Time: "+str(t2-t1))
-
-    # Retrain the model by using the best hyperparameter values to obtain the best model
-    params = {
-            'frozen': int(best['frozen']),
-            'epochs': int(best['epochs']),
-            'patience': int(best['patience']),
-            'lr': abs(float(best['lr'])),
-            'dropout_rate': abs(float(best['dropout_rate'])),
-        }
-    best_result, processing_time, y_pred = run_with_multiprocessing(func=inceptionresnet, num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-    # inceptionresnet(num_class=num_class, verbose=1, history=history_this, timer=timer, **params)
-
-    output.add('InceptionResnet (Random Search)', hpo_time=t2-t1, train_time=processing_time, **best_result)
-    generate_report('InceptionResnet_Random_Search', y_pred=y_pred)
-
-    # # Save Result
-
-    output.to_excel()
-    log_file.close()
-
-    # Online GPU renting platform specification
-    # WeChat Message
-    import requests
-    resp = requests.get(
-        "https://www.autodl.com/api/v1/wechat/message/push?token={token}&title={title}&name={name}&content={content}".format(
-            token="",
-            title="Running Completed",
-            name="2-CNN_Model_Development&Hyperparameter Optimization.py",
-            content="Time Used: {}".format(time.time()-starting_time))
-    )
-    print(resp.content.decode())
 
 
