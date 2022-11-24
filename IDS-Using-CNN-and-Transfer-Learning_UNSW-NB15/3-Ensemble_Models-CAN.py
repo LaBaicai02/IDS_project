@@ -739,7 +739,7 @@ def ensemble(num_class,epochs,savepath='./ensemble.h5'):
     x=Dropout(0.5)(x)
     x=Dense(64,activation='relu')(x)
     x=Dropout(0.25)(x)
-    output=Dense(num_class,activation='softmax',name='output')(x)
+    output=Dense(num_class,activation='softmax',name='ensemble_output')(x)
     model=Model(inputs=img,outputs=output)
     opt = keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
     model.compile(loss='categorical_crossentropy',
