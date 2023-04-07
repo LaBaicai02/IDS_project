@@ -739,7 +739,7 @@ def ensemble(num_class,epochs,savepath='./ensemble.h5'):
     x=Dropout(0.5)(x)
     x=Dense(64,activation='relu')(x)
     x=Dropout(0.25)(x)
-    output=Dense(num_class,activation='softmax',name='output')(x)
+    output=Dense(num_class,activation='softmax',name='ensemble_output')(x)
     model=Model(inputs=img,outputs=output)
     opt = keras.optimizers.Adam(learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
     model.compile(loss='categorical_crossentropy',
@@ -747,7 +747,7 @@ def ensemble(num_class,epochs,savepath='./ensemble.h5'):
                   metrics=['accuracy'])
     #train model
     earlyStopping=kcallbacks.EarlyStopping(monitor='val_accuracy',patience=2, verbose=1, mode='auto', restore_best_weights=True)
-    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='auto')
+    saveBestModel = kcallbacks.ModelCheckpoint(filepath=savepath, monitor='val_accuracy', verbose=1, save_best_only=True, save_weights_only=True, mode='auto')
     hist=model.fit(
         train_generator,
         steps_per_epoch=len(train_generator),
